@@ -37,7 +37,7 @@
 
 **系统要求：** Android 8.0（API 26）及以上，arm64-v8a 架构（95%+ 现代真机）
 
-建议配合[教程文档](https://surveydoc.hungrym0.com/)食用。桌面版请前往 [SurveyController](https://github.com/SurveyController/SurveyController)
+建议配合[教程文档](https://surveydoc.hungrym0.com/)食用。Windows 版请前往 [SurveyController](https://github.com/SurveyController/SurveyController)，Mac 版请前往 [SurveyController-Mac](https://github.com/SurveyController/SurveyController-Mac)
 
 ### 从源码构建
 
