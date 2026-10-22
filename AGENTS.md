@@ -8,7 +8,7 @@
 - **项目性质**：SurveyController 官方 Windows 桌面端的 **安卓端独立移植版**
 - **GitHub 仓库**：https://github.com/shiaho777/SurveyController-Android
 - **License**：GPL-3.0（与官方一致）
-- **当前版本**：v1.0.0（功能对齐官方 v4.0.6）
+- **当前版本**：v1.0.1（功能对齐官方 v4.0.6，含官方 #103 代理剩余时长修复）
 
 ## 官方源仓库
 

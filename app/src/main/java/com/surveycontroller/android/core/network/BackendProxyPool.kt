@@ -78,8 +78,11 @@ class BackendProxyPool(
     }
 
     companion object {
-        /** HTTP 代理最低剩余 TTL（秒）。v4.0.5：30 → 50。对齐 HTTP_PROXY_MIN_REMAINING_TTL_SECONDS。 */
-        const val HTTP_PROXY_MIN_REMAINING_TTL_SECONDS = 50
+        /**
+         * 纯 HTTP 链路不设置预留时长门槛；仍由 expireAt 判断代理是否已经过期。
+         * 对齐 HTTP_PROXY_MIN_REMAINING_TTL_SECONDS（官方 aca7b90，#103）。
+         */
+        const val HTTP_PROXY_MIN_REMAINING_TTL_SECONDS = 0
 
         /**
          * 校验 lease 剩余 TTL 是否充足。复刻 software/network/proxy/pool/pool.py:proxy_lease_has_sufficient_ttl。
