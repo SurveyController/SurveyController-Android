@@ -15,8 +15,8 @@ android {
         applicationId = "com.surveycontroller.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10000
-        versionName = "1.0.0"
+        versionCode = 10001
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
         // 只打包 arm64-v8a：覆盖 95%+ 现代真机，保持极简体积。
