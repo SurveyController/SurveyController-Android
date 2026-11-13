@@ -124,7 +124,7 @@ object ReverseFillBuilder {
         activeQuestions.forEach { q ->
             if (planIssues.containsKey(q.num)) return@forEach
             val match = questionColumns[q.num] ?: return@forEach
-            columnCountIssue(q, match.columns.size)?.let { planIssues[q.num] = it }
+            columnCountIssue(q, match.columns, header, format)?.let { planIssues[q.num] = it }
         }
 
         dataRows.forEachIndexed { idx, row ->
@@ -132,7 +132,7 @@ object ReverseFillBuilder {
             for (q in activeQuestions) {
                 if (planIssues.containsKey(q.num)) continue
                 val match = questionColumns[q.num] ?: continue
-                when (val result = parseAnswer(q, match.columns, row, format)) {
+                when (val result = parseAnswer(q, match.columns, row, format, header)) {
                     is ParseResult.Answer -> answersByRow[idx][q.num] = result.value
                     ParseResult.Blank -> Unit
                     is ParseResult.Invalid -> {
@@ -217,21 +217,61 @@ object ReverseFillBuilder {
         }
     }
 
-    private fun expectedColumnCount(q: SurveyQuestionMeta): Int =
-        when (q.entryType) {
-            QuestionEntryType.MATRIX -> maxOf(1, q.rows)
-            QuestionEntryType.MULTI_TEXT -> maxOf(1, q.textInputs)
-            else -> 1
-        }
+    private val multipleColumnIndexRe = Regex("""[（(]\s*选项\s*(\d+)\s*[)）]\s*$""")
+    private val questionHeaderPrefixRe = Regex("""^\s*(\d+)\s*[、,.，．]\s*(.*?)\s*$""")
 
-    private fun columnCountIssue(q: SurveyQuestionMeta, actual: Int): PlanIssue? {
-        val expected = expectedColumnCount(q)
+    private fun columnSuffix(header: String?): String =
+        questionHeaderPrefixRe.find(header.orEmpty())?.groupValues?.getOrNull(2)?.trim().orEmpty()
+
+    /** 对齐 load_wjx_excel_export 的格式检测：表头带「(选项N)」即视为序号导出。 */
+    private fun effectiveFormat(columns: List<Int>, header: Map<Int, String>, format: String): String {
+        if (format != REVERSE_FILL_FORMAT_AUTO) return format
+        val hasSequenceColumn = columns.any { multipleColumnIndexRe.containsMatchIn(columnSuffix(header[it])) }
+        return if (hasSequenceColumn) REVERSE_FILL_FORMAT_WJX_SEQUENCE else REVERSE_FILL_FORMAT_WJX_TEXT
+    }
+
+    /** 多选题是否按「每题 N 列、每列 0/1」解析（对标 parse_multiple_row_answer）。 */
+    private fun shouldUseMultipleColumns(
+        q: SurveyQuestionMeta,
+        columns: List<Int>,
+        header: Map<Int, String>,
+        format: String,
+    ): Boolean {
+        if (columns.size != 1) return true
+        val resolvedFormat = effectiveFormat(columns, header, format)
+        return resolvedFormat == REVERSE_FILL_FORMAT_WJX_SEQUENCE &&
+            multipleColumnIndexRe.containsMatchIn(columnSuffix(header[columns[0]]))
+    }
+
+    private fun expectedColumnCount(
+        q: SurveyQuestionMeta,
+        columns: List<Int>,
+        header: Map<Int, String>,
+        format: String,
+    ): Int = when (q.entryType) {
+        QuestionEntryType.MATRIX -> maxOf(1, q.rows)
+        QuestionEntryType.MULTI_TEXT -> maxOf(1, q.textInputs)
+        QuestionEntryType.MULTIPLE ->
+            if (shouldUseMultipleColumns(q, columns, header, format)) maxOf(1, q.optionTexts.size) else 1
+        else -> 1
+    }
+
+    private fun columnCountIssue(
+        q: SurveyQuestionMeta,
+        columns: List<Int>,
+        header: Map<Int, String>,
+        format: String,
+    ): PlanIssue? {
+        val expected = expectedColumnCount(q, columns, header, format)
+        val actual = columns.size
         if (actual == expected) return null
         val detail = when (q.entryType) {
             QuestionEntryType.MATRIX ->
                 "矩阵题解析出 $expected 行，但 Excel 中对应了 $actual 列，已使用常规配置"
             QuestionEntryType.MULTI_TEXT ->
                 "多项填空解析出 $expected 个空，但 Excel 中对应了 $actual 列，已使用常规配置"
+            QuestionEntryType.MULTIPLE ->
+                "多选题解析出 $expected 个选项，但 Excel 中对应了 $actual 列，已使用常规配置"
             else ->
                 "这道题在 Excel 中对应了 $actual 列，无法确认唯一答案列，已使用常规配置"
         }
@@ -355,6 +395,7 @@ object ReverseFillBuilder {
         cols: List<Int>,
         row: Map<Int, String>,
         format: String,
+        header: Map<Int, String>,
     ): ParseResult {
         return when (q.entryType) {
             QuestionEntryType.SINGLE, QuestionEntryType.DROPDOWN,
@@ -366,11 +407,19 @@ object ReverseFillBuilder {
                 ParseResult.Answer(ReverseFillAnswer(kind = "choice", choiceIndex = idx))
             }
             QuestionEntryType.MULTIPLE -> {
-                val raw = row[cols.first()]?.trim().orEmpty()
-                if (raw.isEmpty()) return ParseResult.Blank
-                val indexes = resolveMultipleChoiceIndexes(raw, q.optionTexts, format)
-                    ?: return ParseResult.Invalid(multipleChoiceParseFailure(raw, q.optionTexts, format))
-                ParseResult.Answer(ReverseFillAnswer(kind = "choice", choiceIndexes = indexes))
+                if (shouldUseMultipleColumns(q, cols, header, format)) {
+                    parseMultipleRowAnswer(q, cols, row, format, header)
+                } else {
+                    val raw = row[cols.first()]?.trim().orEmpty()
+                    if (raw.isEmpty()) return ParseResult.Blank
+                    val indexes = resolveMultipleChoiceIndexes(raw, q.optionTexts, format)
+                        ?: return ParseResult.Invalid(multipleChoiceParseFailure(raw, q.optionTexts, format))
+                    if (indexes.isEmpty()) {
+                        return ParseResult.Invalid("多选题答案为空，无法稳定回放")
+                    }
+                    validateMultipleCount(q, indexes.size)?.let { return ParseResult.Invalid(it) }
+                    ParseResult.Answer(ReverseFillAnswer(kind = "choice", choiceIndexes = indexes))
+                }
             }
             QuestionEntryType.TEXT -> {
                 val raw = row[cols.first()]?.trim().orEmpty()
@@ -442,22 +491,52 @@ object ReverseFillBuilder {
         return "无法把“$raw”匹配到多选题选项"
     }
 
+    /** 选项文本 → 索引；重复文本（歧义）记为 null，避免静默选错。 */
+    private fun optionIndexMap(optionTexts: List<String>): Map<String, Int?> {
+        val mapping = HashMap<String, Int?>()
+        optionTexts.forEachIndexed { index, text ->
+            for (variant in labelVariants(text)) {
+                if (mapping.containsKey(variant) && mapping[variant] != index) {
+                    mapping[variant] = null
+                } else {
+                    mapping[variant] = index
+                }
+            }
+        }
+        return mapping
+    }
+
+    private fun exactOptionMatches(raw: String, optionTexts: List<String>): List<Int> {
+        val key = normalizeKey(raw)
+        return optionTexts.indices.filter { normalizeKey(optionTexts[it]) == key }
+    }
+
     private fun resolveChoiceIndex(raw: String, optionTexts: List<String>, format: String): Int? {
         if (unsupportedChoiceReason(raw) != null) return null
+        // 序号导出只按序号解析，避免选项文本恰好是数字时误判。
+        if (format == REVERSE_FILL_FORMAT_WJX_SEQUENCE) {
+            if (!numberText.matches(raw)) return null
+            val oneBased = raw.substringBefore(".").toIntOrNull() ?: return null
+            return (oneBased - 1).takeIf { it in optionTexts.indices }
+        }
+        val exact = exactOptionMatches(raw, optionTexts)
+        if (exact.size == 1) return exact[0]
+        if (exact.size > 1) return null
         // 文本匹配
         val variants = labelVariants(raw)
-        val optionMap = HashMap<String, Int>()
-        optionTexts.forEachIndexed { i, t -> labelVariants(t).forEach { optionMap.putIfAbsent(it, i) } }
-        if (format != REVERSE_FILL_FORMAT_WJX_SEQUENCE) {
-            for (v in variants) optionMap[v]?.let { return it }
+        val optionMap = optionIndexMap(optionTexts)
+        for (v in variants) {
+            if (!optionMap.containsKey(v)) continue
+            return optionMap[v]
         }
-        // 序号匹配（1-based）
+        // 序号兜底（分数/文本导出允许纯数字）
         if (numberText.matches(raw)) {
             val oneBased = raw.substringBefore(".").toIntOrNull()
             if (oneBased != null && oneBased in 1..optionTexts.size) return oneBased - 1
         }
-        if (format != REVERSE_FILL_FORMAT_WJX_SEQUENCE) {
-            for (v in variants) optionMap[v]?.let { return it }
+        for (v in variants) {
+            if (!optionMap.containsKey(v)) continue
+            return optionMap[v]
         }
         return null
     }
@@ -475,33 +554,102 @@ object ReverseFillBuilder {
         return indexes.toList().takeIf { it.isNotEmpty() }?.sorted()
     }
 
+    /** 对标 parse_multiple_row_answer：多选答案按「每题 N 列、每列 0/1」逐列回放。 */
+    private fun parseMultipleRowAnswer(
+        q: SurveyQuestionMeta,
+        cols: List<Int>,
+        row: Map<Int, String>,
+        format: String,
+        header: Map<Int, String>,
+    ): ParseResult {
+        val optionTexts = q.optionTexts
+        val resolvedFormat = effectiveFormat(cols, header, format)
+        if (optionTexts.isEmpty() || cols.size != optionTexts.size) {
+            return ParseResult.Invalid("多选题的选项数量与 Excel 列数不匹配")
+        }
+
+        val indexesByColumn = LinkedHashMap<Int, Int>()
+        val usedIndexes = HashSet<Int>()
+        for (col in cols) {
+            val suffix = columnSuffix(header[col])
+            val index = if (resolvedFormat == REVERSE_FILL_FORMAT_WJX_SEQUENCE) {
+                val match = multipleColumnIndexRe.find(suffix)
+                    ?: return ParseResult.Invalid("多选题列“${header[col].orEmpty()}”缺少选项序号")
+                match.groupValues[1].toIntOrNull()?.minus(1)
+                    ?: return ParseResult.Invalid("多选题列“${header[col].orEmpty()}”的选项序号无效")
+            } else {
+                val suffixKey = normalizeKey(suffix)
+                val matches = optionTexts.indices.filter { optionIndex ->
+                    val labelKey = normalizeKey(optionTexts[optionIndex])
+                    suffixKey == labelKey || suffixKey.endsWith("($labelKey)")
+                }
+                if (matches.size != 1) {
+                    return ParseResult.Invalid("多选题列“${header[col].orEmpty()}”无法唯一匹配选项")
+                }
+                matches[0]
+            }
+            if (index !in optionTexts.indices || !usedIndexes.add(index)) {
+                return ParseResult.Invalid("多选题列“${header[col].orEmpty()}”的选项超出范围或重复")
+            }
+            indexesByColumn[col] = index
+        }
+
+        val values = cols.map { row[it]?.trim().orEmpty() }
+        if (values.all { it.isEmpty() }) return ParseResult.Blank
+        val selected = mutableListOf<Int>()
+        for ((col, value) in cols.zip(values)) {
+            if (value !in setOf("0", "1")) {
+                return ParseResult.Invalid("多选题列“${header[col].orEmpty()}”的值必须为 0 或 1")
+            }
+            if (value == "1") selected.add(indexesByColumn.getValue(col))
+        }
+        if (selected.isEmpty()) {
+            return ParseResult.Invalid("多选题答案为空，无法稳定回放")
+        }
+        validateMultipleCount(q, selected.size)?.let { return ParseResult.Invalid(it) }
+        return ParseResult.Answer(ReverseFillAnswer(kind = "choice", choiceIndexes = selected.sorted()))
+    }
+
+    private fun validateMultipleCount(q: SurveyQuestionMeta, count: Int): String? {
+        val minimum = q.multiMinLimit?.takeIf { it > 0 }
+        val maximum = q.multiMaxLimit?.takeIf { it > 0 }
+        if (minimum != null && count < minimum) {
+            return "多选题选中 $count 项，少于问卷要求的至少 $minimum 项"
+        }
+        if (maximum != null && count > maximum) {
+            return "多选题选中 $count 项，多于问卷要求的至多 $maximum 项"
+        }
+        return null
+    }
+
     private fun splitMultipleValue(raw: String): List<String> {
         val text = raw.trim()
         if (text.isEmpty()) return emptyList()
-        val delimiters = listOf("┋", "|", "｜", ";", "；", ",", "，")
-        var parts = listOf(text)
-        for (delimiter in delimiters) {
-            if (delimiter in text) {
-                parts = text.split(delimiter)
-                break
-            }
-        }
-        return parts.map { it.trim() }.filter { it.isNotEmpty() }
+        return text.split("┋").map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     private fun resolvePlainChoiceIndex(raw: String, optionTexts: List<String>, format: String): Int? {
+        if (format == REVERSE_FILL_FORMAT_WJX_SEQUENCE) {
+            if (!numberText.matches(raw)) return null
+            val oneBased = raw.substringBefore(".").toIntOrNull() ?: return null
+            return (oneBased - 1).takeIf { it in optionTexts.indices }
+        }
+        val exact = exactOptionMatches(raw, optionTexts)
+        if (exact.size == 1) return exact[0]
+        if (exact.size > 1) return null
         val variants = labelVariants(raw)
-        val optionMap = HashMap<String, Int>()
-        optionTexts.forEachIndexed { i, t -> labelVariants(t).forEach { optionMap.putIfAbsent(it, i) } }
-        if (format != REVERSE_FILL_FORMAT_WJX_SEQUENCE) {
-            for (v in variants) optionMap[v]?.let { return it }
+        val optionMap = optionIndexMap(optionTexts)
+        for (v in variants) {
+            if (!optionMap.containsKey(v)) continue
+            return optionMap[v]
         }
         if (numberText.matches(raw)) {
             val oneBased = raw.substringBefore(".").toIntOrNull()
             if (oneBased != null && oneBased in 1..optionTexts.size) return oneBased - 1
         }
-        if (format != REVERSE_FILL_FORMAT_WJX_SEQUENCE) {
-            for (v in variants) optionMap[v]?.let { return it }
+        for (v in variants) {
+            if (!optionMap.containsKey(v)) continue
+            return optionMap[v]
         }
         return null
     }

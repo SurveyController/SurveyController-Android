@@ -15,6 +15,7 @@ data class SurveyQuestionMeta(
     val providerQuestionId: String = "",
     val providerPageId: String = "",
     val providerType: String = "",
+    val providerPageRaw: Map<String, Any?>? = null,
     val options: Int = 0,                   // 选项数 / 列数
     val rows: Int = 1,                      // 矩阵行数
     val optionTexts: List<String> = emptyList(),

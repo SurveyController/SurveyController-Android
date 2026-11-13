@@ -9,6 +9,7 @@ import com.surveycontroller.android.core.reverse_fill.ReverseFillBuilder
 import com.surveycontroller.android.core.reverse_fill.ReverseFillRuntime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReverseFillTest {
@@ -538,5 +539,96 @@ class ReverseFillTest {
 
         assertEquals(false, spec.questionPlans.first().matchedByHeader)
         assertEquals(listOf("第一列"), spec.questionPlans.first().columnHeaders)
+    }
+
+    // ===== 多选题多列回放（对标 surveycore parse_multiple_row_answer） =====
+
+    @Test
+    fun multiple_sequence_columns_replay_zero_one_flags() {
+        val question = SurveyQuestionMeta(
+            num = 5, title = "标题", typeCode = "4", options = 3,
+            optionTexts = listOf("选项1", "选项2", "选项3"),
+        )
+        val rows = listOf(
+            mapOf(0 to "序号", 1 to "5、标题(选项1)", 2 to "5、(选项2)", 3 to "5、(选项3)"),
+            mapOf(0 to "1", 1 to "1", 2 to "0", 3 to "1"),
+            mapOf(0 to "2", 1 to "0", 2 to "1", 3 to "0"),
+        )
+
+        val spec = ReverseFillBuilder.build(
+            rows, listOf(question), startRow = 1, format = REVERSE_FILL_FORMAT_WJX_SEQUENCE, targetNum = 2,
+        )
+
+        assertEquals("reverse_fill", spec.questionPlans.first().status)
+        assertEquals(listOf(1, 2, 3), spec.questionPlans.first().columnIndexes)
+        val runtime = ReverseFillRuntime(spec)
+        runtime.reserve("t1")
+        assertEquals(listOf(0, 2), runtime.resolve(5, "t1")?.choiceIndexes)
+        runtime.commit("t1")
+        runtime.reserve("t1")
+        assertEquals(listOf(1), runtime.resolve(5, "t1")?.choiceIndexes)
+    }
+
+    @Test
+    fun multiple_text_columns_match_option_labels_regardless_of_order() {
+        val question = SurveyQuestionMeta(
+            num = 5, title = "标题", typeCode = "4", options = 2,
+            optionTexts = listOf("甲", "乙"),
+        )
+        val rows = listOf(
+            mapOf(0 to "5、标题（乙）", 1 to "5、(甲)"),
+            mapOf(0 to "1", 1 to "0"),
+            mapOf(0 to "0", 1 to "1"),
+        )
+
+        val spec = ReverseFillBuilder.build(
+            rows, listOf(question), startRow = 1, format = REVERSE_FILL_FORMAT_WJX_TEXT, targetNum = 2,
+        )
+
+        assertEquals("reverse_fill", spec.questionPlans.first().status)
+        val runtime = ReverseFillRuntime(spec)
+        runtime.reserve("t1")
+        assertEquals(listOf(1), runtime.resolve(5, "t1")?.choiceIndexes)
+        runtime.commit("t1")
+        runtime.reserve("t1")
+        assertEquals(listOf(0), runtime.resolve(5, "t1")?.choiceIndexes)
+    }
+
+    @Test
+    fun multiple_columns_reject_partial_blank_or_invalid_flags() {
+        val question = SurveyQuestionMeta(
+            num = 5, title = "标题", typeCode = "4", options = 3,
+            optionTexts = listOf("甲", "乙", "丙"),
+        )
+        val rows = listOf(
+            mapOf(0 to "5、标题(选项1)", 1 to "5、(选项2)", 2 to "5、(选项3)"),
+            mapOf(0 to "1", 1 to "", 2 to "0"),
+        )
+
+        val spec = ReverseFillBuilder.build(
+            rows, listOf(question), startRow = 1, format = REVERSE_FILL_FORMAT_WJX_SEQUENCE, targetNum = 1,
+        )
+
+        assertEquals(REVERSE_FILL_STATUS_FALLBACK, spec.questionPlans.first().status)
+        assertTrue(spec.questionPlans.first().detail.contains("0 或 1"))
+    }
+
+    @Test
+    fun multiple_columns_with_wrong_count_fall_back() {
+        val question = SurveyQuestionMeta(
+            num = 5, title = "标题", typeCode = "4", options = 3,
+            optionTexts = listOf("甲", "乙", "丙"),
+        )
+        val rows = listOf(
+            mapOf(0 to "5、标题(选项1)", 1 to "5、(选项2)"),
+            mapOf(0 to "1", 1 to "0"),
+        )
+
+        val spec = ReverseFillBuilder.build(
+            rows, listOf(question), startRow = 1, format = REVERSE_FILL_FORMAT_WJX_SEQUENCE, targetNum = 1,
+        )
+
+        assertEquals(REVERSE_FILL_STATUS_FALLBACK, spec.questionPlans.first().status)
+        assertTrue(spec.questionPlans.first().detail.contains("多选题"))
     }
 }

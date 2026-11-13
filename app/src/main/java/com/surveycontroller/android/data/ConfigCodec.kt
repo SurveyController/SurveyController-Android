@@ -117,6 +117,7 @@ object ConfigCodec {
         put("provider_question_id", q.providerQuestionId.trim())
         put("provider_page_id", q.providerPageId.trim())
         put("provider_type", q.providerType.trim())
+        q.providerPageRaw?.let { put("provider_page_raw", JSONObject(it)) }
         put("is_location", q.isLocation)
         put("is_rating", q.isRating)
         put("rating_max", q.ratingMax)
@@ -433,6 +434,10 @@ object ConfigCodec {
             providerQuestionId = o.optString("provider_question_id").trim().ifBlank { num.toString() },
             providerPageId = o.optString("provider_page_id").trim().ifBlank { page.toString() },
             providerType = providerType,
+            providerPageRaw = o.optJSONObject("provider_page_raw")?.let {
+                @Suppress("UNCHECKED_CAST")
+                jsonToKotlin(it) as? Map<String, Any?>
+            },
             isLocation = o.optBoolean("is_location"),
             isRating = o.optBoolean("is_rating"),
             ratingMax = o.optInt("rating_max").coerceAtLeast(0),
@@ -615,6 +620,7 @@ object ConfigCodec {
     }
 
     private fun idToEntryType(id: String): QuestionEntryType = when (id) {
+        "multilevel_dropdown" -> QuestionEntryType.DROPDOWN
         "multiple" -> QuestionEntryType.MULTIPLE; "dropdown" -> QuestionEntryType.DROPDOWN
         "scale" -> QuestionEntryType.SCALE; "score" -> QuestionEntryType.SCORE
         "matrix" -> QuestionEntryType.MATRIX; "slider" -> QuestionEntryType.SLIDER
