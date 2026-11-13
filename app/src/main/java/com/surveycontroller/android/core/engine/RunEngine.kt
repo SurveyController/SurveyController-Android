@@ -241,6 +241,13 @@ class RunEngine(
                 if (interval > 0) delay(interval * 1000L)
                 continue
             }
+            // 对标核心库提交生命周期修复：停止信号在提交准备阶段到达时不得继续 POST。
+            if (stopFlag.get() || !currentCoroutineContext().isActive) {
+                claimed.decrementAndGet()
+                sampleByThread.remove(name)
+                reverseRuntime?.discard(name, requeue = true)
+                break
+            }
             setSlot(name, "提交中", running = true)
             val result = try {
                 registry.fillSurveyHttp(config, state, name, proxy, ua)

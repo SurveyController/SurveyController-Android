@@ -155,6 +155,12 @@ object WjxHtmlParser {
                 val num = extractQuestionNumber(div) ?: continue
                 var typeCode = div.attr("type").trim().ifEmpty { "0" }
                 if (typeCode != "11" && looksLikeReorder(div)) typeCode = "11"
+                // 对标 _question_div_is_empty_gapfill_placeholder：隐藏且无输入框的填空占位节点直接跳过。
+                if (isHiddenEmptyGapfillPlaceholder(div, typeCode)) continue
+                // 对标 is_multilevel：type=1 且带「多级下拉」标记的输入框，按 type=7 处理。
+                val multilevelInput = div.selectFirst("input[verify=多级下拉]")
+                val isMultilevel = typeCode == "1" && multilevelInput != null
+                if (isMultilevel) typeCode = "7"
                 val isRating = typeCode == "5" && looksLikeRating(div)
                 val required = isRequired(div)
                 val title = extractTitle(div, num)
@@ -176,7 +182,7 @@ object WjxHtmlParser {
                     }
                 }
 
-                val textInputs = countTextInputs(div)
+                val textInputs = if (isMultilevel) 0 else countTextInputs(div)
                 val textInputLabels = if (textInputs > 1) extractTextInputLabels(div) else emptyList()
                 val isLocation = typeCode in listOf("1", "2") && looksLikeLocation(div)
                 val isTextLike = shouldTreatAsTextLike(typeCode, optionCount, textInputs, isLocation, isSliderMatrix)
@@ -210,6 +216,12 @@ object WjxHtmlParser {
                         optionTexts = optionTexts,
                         rowTexts = rowTexts,
                         required = required,
+                        providerType = if (isMultilevel) WjxMultilevel.PROVIDER_TYPE else typeCode,
+                        providerPageRaw = if (isMultilevel) {
+                            mapOf("cid" to (multilevelInput?.attr("cid")?.trim().orEmpty()))
+                        } else {
+                            null
+                        },
                         isRating = isRating,
                         isDescription = isDescription,
                         ratingMax = if (isRating) maxOf(optionCount, extractRatingOptionCount(div)) else 0,
@@ -932,6 +944,14 @@ object WjxHtmlParser {
         }
         return false
     }
+
+    /** 对标 _question_div_is_empty_gapfill_placeholder。 */
+    private fun isHiddenEmptyGapfillPlaceholder(div: Element, typeCode: String): Boolean =
+        typeCode == "9" &&
+            div.attr("gapfill").trim() == "1" &&
+            div.attr("relation").trim() in setOf("", "0") &&
+            questionOrAncestorsAreHidden(div) &&
+            countTextInputs(div) == 0
 
     private fun elementInitiallyHidden(element: Element): Boolean {
         val style = element.attr("style").lowercase()

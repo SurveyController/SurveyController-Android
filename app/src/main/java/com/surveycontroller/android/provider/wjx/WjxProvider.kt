@@ -32,7 +32,8 @@ class WjxProvider(
         repeat(parseRetryAttempts) { attempt ->
             try {
                 val resp = http.get(url, headers = UserAgents.DEFAULT_HEADERS, timeoutSeconds = 12)
-                val (questions, title) = WjxHtmlParser.parse(resp.body)
+                val (parsedQuestions, title) = WjxHtmlParser.parse(resp.body)
+                val questions = WjxMultilevel.loadOptions(parsedQuestions, resp.body, url, http)
                 if (questions.isNotEmpty() || attempt == parseRetryAttempts - 1) {
                     return SurveyDefinition(SurveyProviderType.WJX, url, title, questions)
                 }
@@ -74,10 +75,16 @@ class WjxProvider(
         val answerCtx = answerContextFactory(config, state, threadName)
         val plan = SurveyAnswerBuilder(answerCtx).buildPlan()
         if (plan.actions.isEmpty()) return SubmitResult.Failure("未生成任何答案")
+        val orderedQuestions = config.orderedQuestions()
+        val questionsByNum = orderedQuestions.associateBy { it.num }
+        // 对标 multilevel_answer_action：多级下拉把选项索引换成文本路径。
+        val actions = plan.actions.map { action ->
+            questionsByNum[action.questionNum]?.let { WjxMultilevel.applyAnswer(action, it) } ?: action
+        }
 
         // 登记待定分布选择（提交成功后并入统计）
         state.discardPendingDistribution(threadName)
-        for (action in plan.actions) {
+        for (action in actions) {
             for ((optionIndex, optionCount, rowIndex) in action.pendingDistributionChoices) {
                 val statKey = if (rowIndex == null) "q:${action.configQuestionNum}" else "matrix:${action.configQuestionNum}:$rowIndex"
                 state.appendPendingDistribution(threadName, statKey, optionIndex, optionCount)
@@ -85,7 +92,7 @@ class WjxProvider(
         }
 
         val submitData = WjxSubmitCodec.buildSubmitData(
-            plan.actions, config.orderedQuestions(), plan.skippedQuestionNums,
+            actions, orderedQuestions, plan.skippedQuestionNums,
         )
         if (!config.submitEnabled) {
             state.commitPendingDistributionFor(answerCtx)
