@@ -153,7 +153,7 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!s.aiEnabled, { set { it.copy(aiEnabled = false) } }, { Text("免费 AI（限时）") })
+                FilterChip(!s.aiEnabled, { set { it.copy(aiEnabled = false) } }, { Text("免费 AI（后端）") })
                 FilterChip(s.aiEnabled, { set { it.copy(aiEnabled = true) } }, { Text("自定义 API") })
             }
             if (s.aiEnabled) {
@@ -169,7 +169,7 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
                 }
                 OutlinedTextField(s.aiSystemPrompt, { v -> set { it.copy(aiSystemPrompt = v) } }, label = { Text("系统提示词（可选）") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
             } else {
-                Text("免费 AI 由项目后端提供（限时免费），首次使用自动领取试用身份。", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                Text("免费 AI 由项目后端提供，可用性以服务端为准；首次使用会自动尝试获取账号身份。", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
             }
         }
 
@@ -178,21 +178,33 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
             val sess = account.session
             if (sess.authenticated) {
                 Text("用户 ID：${sess.userId}", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    if (sess.ready) "登录状态：已激活" else "登录状态：旧版会话（缺少登录凭据，请点“同步额度”升级）",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 Text("额度：剩余 ${fmt(sess.remainingQuota)} / 总 ${fmt(sess.totalQuota)}（已用 ${fmt(sess.usedQuota)}）", style = MaterialTheme.typography.bodySmall)
             } else {
-                Text("尚未领取试用。领取后可用默认/福利代理源与免费 AI。", style = MaterialTheme.typography.bodySmall)
+                Text("尚未激活随机 IP 账号。可使用额度卡密直接激活；服务端已停止发放免费试用，旧版“领取试用”可能失败。", style = MaterialTheme.typography.bodySmall)
             }
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!sess.authenticated) Button(onClick = viewModel::activateTrial, enabled = !account.busy) { Text("领取试用") }
+                if (!sess.authenticated) Button(onClick = viewModel::activateTrial, enabled = !account.busy) { Text("激活 / 领取") }
                 else OutlinedButton(onClick = viewModel::refreshQuota, enabled = !account.busy) { Text("同步额度") }
                 OutlinedButton(onClick = viewModel::checkBackendStatus, enabled = !account.busy) { Text("服务状态") }
                 if (account.busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             }
             OutlinedButton(onClick = onOpenIpUsage, modifier = Modifier.padding(top = 4.dp)) { Text("查看 IP 使用记录") }
-            if (sess.authenticated) {
-                OutlinedTextField(cardCode, { cardCode = it }, label = { Text("额度卡密") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), singleLine = true)
-                Button(onClick = { viewModel.redeemCard(cardCode); cardCode = "" }, enabled = !account.busy && cardCode.isNotBlank(), modifier = Modifier.padding(top = 4.dp)) { Text("兑换额度") }
-            }
+            OutlinedTextField(
+                cardCode,
+                { cardCode = it },
+                label = { Text(if (sess.authenticated) "额度卡密" else "额度卡密（未激活时用于激活）") },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                singleLine = true,
+            )
+            Button(
+                onClick = { viewModel.redeemCard(cardCode); cardCode = "" },
+                enabled = !account.busy && cardCode.isNotBlank(),
+                modifier = Modifier.padding(top = 4.dp),
+            ) { Text(if (sess.authenticated) "兑换额度" else "激活账号") }
             account.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp)) }
         }
 

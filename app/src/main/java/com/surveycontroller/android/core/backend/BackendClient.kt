@@ -4,6 +4,7 @@ import com.surveycontroller.android.core.network.HttpClient
 import com.surveycontroller.android.core.network.UserAgents
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.SecureRandom
 
 /**
  * 项目私有后端（api-wjx.hungrym0.com）的客户端接口。1:1 对接：
@@ -14,6 +15,9 @@ import org.json.JSONObject
 object BackendEndpoints {
     @Volatile var base = "https://api-wjx.hungrym0.com"
     val authTrial get() = "$base/api/auth/trial"
+
+    /** v5.0.0 新增：Bearer 令牌校验 + 额度同步（GET）。 */
+    val authSession get() = "$base/api/auth/session"
     val bonus get() = "$base/api/bonus"
     val cardRedeem get() = "$base/api/cards/redeem"
     val ipExtract get() = "$base/api/ip/extract"
@@ -44,13 +48,41 @@ class BackendClient(
     private val deviceIdentity: DeviceIdentity,
     private val sessionStore: RandomIpSessionStore,
 ) {
-    private suspend fun headers(): Map<String, String> = UserAgents.DEFAULT_HEADERS.toMutableMap().apply {
-        this["Content-Type"] = "application/json"
-        this["X-Device-ID"] = deviceIdentity.get()
+    /**
+     * 请求头。对齐官方 `_build_headers`：有令牌时带 `Authorization: Bearer`，
+     * 始终带 `X-Device-ID`（激活卡密时靠它绑定设备）。
+     */
+    private suspend fun headers(accessToken: String? = null): Map<String, String> =
+        UserAgents.DEFAULT_HEADERS.toMutableMap().apply {
+            this["Content-Type"] = "application/json"
+            this["X-Device-ID"] = deviceIdentity.get()
+            val token = accessToken ?: runCatching { sessionStore.load().accessToken }.getOrDefault("")
+            if (token.isNotEmpty()) this["Authorization"] = "Bearer $token"
+        }
+
+    private suspend fun postJson(
+        url: String,
+        body: JSONObject,
+        timeoutSeconds: Long = 10,
+        accessToken: String? = null,
+    ): Pair<Int, JSONObject> {
+        val resp = http.postBody(
+            url,
+            body.toString(),
+            headers = headers(accessToken),
+            timeoutSeconds = timeoutSeconds,
+        )
+        val json = try {
+            JSONObject(resp.body.ifBlank { "{}" })
+        } catch (e: Exception) {
+            JSONObject()
+        }
+        return resp.statusCode to json
     }
 
-    private suspend fun postJson(url: String, body: JSONObject, timeoutSeconds: Long = 10): Pair<Int, JSONObject> {
-        val resp = http.postBody(url, body.toString(), headers = headers(), timeoutSeconds = timeoutSeconds)
+    /** GET + JSON 解析。对齐官方 `_aget_json`（v5 起 /api/auth/session 为 GET）。 */
+    private suspend fun getJson(url: String, timeoutSeconds: Long = 10): Pair<Int, JSONObject> {
+        val resp = http.get(url, headers = headers(), timeoutSeconds = timeoutSeconds)
         val json = try {
             JSONObject(resp.body.ifBlank { "{}" })
         } catch (e: Exception) {
@@ -65,30 +97,74 @@ class BackendClient(
         return BackendException(detail, status, retry)
     }
 
+    /** 应用服务端返回的额度字段；缺失时保留本地值（兼容尚未升级的服务端）。 */
     private fun applyQuota(json: JSONObject, base: RandomIpSession): RandomIpSession {
         val remaining = json.optDouble("remaining_quota", base.remainingQuota)
-        val total = json.optDouble("total_quota", base.totalQuota)
-        val used = json.optDouble("used_quota", base.usedQuota)
+        val total = maxOf(json.optDouble("total_quota", base.totalQuota), remaining)
+        val used = json.optDouble("used_quota", maxOf(0.0, total - remaining))
         return base.copy(remainingQuota = remaining, totalQuota = total, usedQuota = used)
     }
 
-    /** 领取免费试用，返回会话。复刻 activate_trial_async。 */
-    suspend fun activateTrial(): RandomIpSession {
-        val (status, json) = postJson(BackendEndpoints.authTrial, JSONObject())
+    /** 读取响应中的 Bearer 令牌（官方 access_token/token_type，兼容旧 token 字段）。 */
+    private fun extractAccessToken(json: JSONObject, expected: String = ""): String {
+        val token = json.optString("access_token").trim().ifBlank { json.optString("token").trim() }
+        if (token.isEmpty()) return ""
+        val tokenType = json.optString("token_type").trim()
+        if (tokenType.isNotEmpty() && !tokenType.equals("Bearer", ignoreCase = true)) return ""
+        if (expected.isNotEmpty() && token != expected) return ""
+        return token
+    }
+
+    /** 由会话响应构造本地会话，保留已有令牌。 */
+    private fun sessionFrom(json: JSONObject, base: RandomIpSession, token: String = ""): RandomIpSession {
+        val userId = json.optInt("user_id", base.userId)
+        if (userId <= 0) throw BackendException("invalid_response:user_id_invalid", 200)
+        val withQuota = applyQuota(json, base.copy(userId = userId))
+        return if (token.isNotEmpty()) withQuota.copy(accessToken = token) else withQuota
+    }
+
+    /**
+     * 确保具备可用会话，对齐官方 v5 `ensure_authenticated_session_async`：
+     * 1) 已有令牌 → 直接返回；
+     * 2) 仅有 user_id 的旧会话 → POST /api/auth/trial 换取令牌；
+     * 3) 全新设备 → POST /api/auth/trial 领取试用（服务端停止发放时会返回明确错误）。
+     */
+    suspend fun ensureSession(): RandomIpSession {
+        val current = sessionStore.load()
+        if (current.accessToken.isNotEmpty()) return current
+        val body = if (current.userId > 0) JSONObject().put("user_id", current.userId) else JSONObject()
+        val (status, json) = postJson(BackendEndpoints.authTrial, body, accessToken = "")
         if (status != 200) throw errorFrom(status, json)
-        val userId = json.optInt("user_id", 0)
-        if (userId <= 0) throw BackendException("invalid_response:user_id_invalid", status)
-        val session = applyQuota(json, RandomIpSession(userId = userId))
+        val session = sessionFrom(json, current, extractAccessToken(json))
         sessionStore.save(session)
         return session
     }
 
-    /** 同步额度（再次 POST trial）。 */
+    /** 兼容旧调用点：语义等同于确保会话可用。 */
+    suspend fun activateTrial(): RandomIpSession = ensureSession()
+
+    /**
+     * 同步额度：有令牌走 GET /api/auth/session（v5 新增），
+     * 否则回落到旧的 trial 接口，保证老服务端仍可用。
+     */
     suspend fun syncQuota(): RandomIpSession {
         val session = requireSession()
-        val (status, json) = postJson(BackendEndpoints.authTrial, JSONObject())
+        val (status, json) = if (session.accessToken.isNotEmpty()) {
+            getJson(BackendEndpoints.authSession)
+        } else {
+            postJson(
+                BackendEndpoints.authTrial,
+                JSONObject().put("user_id", session.userId),
+                accessToken = "",
+            )
+        }
+        if (status == 401 || status == 403) {
+            // 令牌失效：清空后重新换取一次，对齐官方 invalid_access_token 处理
+            sessionStore.save(session.copy(accessToken = ""))
+            return ensureSession()
+        }
         if (status != 200) throw errorFrom(status, json)
-        val updated = applyQuota(json, session)
+        val updated = sessionFrom(json, session, extractAccessToken(json))
         sessionStore.save(updated)
         return updated
     }
@@ -99,6 +175,12 @@ class BackendClient(
         return s
     }
 
+    /** 需要 Bearer 的接口：旧会话先自动换一次令牌，失败则抛出可读错误。 */
+    private suspend fun requireReadySession(): RandomIpSession {
+        val s = requireSession()
+        return if (s.ready) s else ensureSession()
+    }
+
     /** 提取代理 IP。复刻 extract_proxy_async：单个或批量。 */
     suspend fun extractProxies(
         minute: Int,
@@ -107,7 +189,7 @@ class BackendClient(
         num: Int = 1,
         upstream: String = "default",
     ): List<ProxyLease> {
-        val session = requireSession()
+        val session = requireReadySession()
         val body = JSONObject()
             .put("user_id", session.userId)
             .put("minute", minute)
@@ -158,17 +240,48 @@ class BackendClient(
         return updated
     }
 
-    /** 卡密兑换额度。复刻 redeem_card_async。 */
+    /**
+     * 卡密兑换 / 激活。对齐 v5 `redeem_card_async`：
+     * - 尚未持有令牌时属于"激活"：客户端生成 64 位 hex `activation_token` 一并提交，
+     *   服务端回显 `access_token`（必须与之相等）与 `token_type=Bearer`；
+     * - 已有令牌时属于"充值"：只提交卡密，用 Bearer 鉴权。
+     */
     suspend fun redeemCard(cardCode: String): RandomIpSession {
-        val session = requireSession()
+        val session = sessionStore.load()
+        val activating = session.accessToken.isEmpty()
+        val activationToken = if (activating) newActivationToken() else ""
+        val body = JSONObject().put("card_code", cardCode.trim())
+        if (activating) {
+            body.put("activation_token", activationToken)
+            if (session.userId > 0) body.put("user_id", session.userId)
+        }
         val (status, json) = postJson(
             BackendEndpoints.cardRedeem,
-            JSONObject().put("user_id", session.userId).put("card_code", cardCode.trim()),
+            body,
+            accessToken = if (activating) "" else null,
         )
         if (status != 200) throw errorFrom(status, json)
+        if (activating) {
+            val token = extractAccessToken(json, expected = activationToken)
+            // 服务端若返回了 access_token，就必须与本地 activation_token 一致（对齐官方校验）
+            if (token.isEmpty() && json.optString("access_token").isNotEmpty()) {
+                throw BackendException("invalid_response:access_token", status)
+            }
+            // 未返回 access_token 视为旧服务端，按无令牌会话继续使用
+            val updated = sessionFrom(json, session, token)
+            sessionStore.save(updated)
+            return updated
+        }
         val updated = applyQuota(json, session)
         sessionStore.save(updated)
         return updated
+    }
+
+    /** 生成 64 位十六进制激活令牌，对齐官方 `secrets.token_hex(32)`。 */
+    private fun newActivationToken(): String {
+        val bytes = ByteArray(32)
+        SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 
     /** 后端在线状态。复刻 get_status。 */
@@ -201,7 +314,7 @@ class BackendClient(
     /** 免费 AI 填空（单题）。复刻 call_free_ai_api_async。身份缺失自动领取试用。 */
     suspend fun freeAiAnswer(questionContent: String, questionType: String, blankCount: Int?, systemPrompt: String?): List<String> {
         var session = sessionStore.load()
-        if (!session.authenticated) session = activateTrial()
+        if (!session.ready) session = ensureSession()
         val body = JSONObject()
             .put("user_id", session.userId)
             .put("question_type", questionType)
@@ -226,7 +339,7 @@ class BackendClient(
     suspend fun freeAiBatch(items: List<FreeAiBatchItem>, systemPrompt: String?): Map<String, List<String>> {
         if (items.isEmpty()) return emptyMap()
         var session = sessionStore.load()
-        if (!session.authenticated) session = activateTrial()
+        if (!session.ready) session = ensureSession()
         val completed = HashMap<String, List<String>>()
         // 单任务最多 64 题，分块提交
         items.chunked(64).forEach { chunk ->
@@ -357,3 +470,34 @@ data class IpUsageRecord(val label: String, val total: Int)
 
 /** IP 用量汇总。 */
 data class IpUsageSummary(val records: List<IpUsageRecord>, val remainingIp: Int?)
+
+/**
+ * 把后端错误细化成可操作的中文提示，对齐官方 v5 `format_random_ip_error`。
+ * 重点覆盖 v5 移除免费试用后最常见的两种情况（领取试用失败 / 令牌失效）。
+ */
+fun backendErrorMessage(error: Throwable): String {
+    val detail = (error as? BackendException)?.detail?.trim().orEmpty()
+    if (detail.isEmpty()) return error.message ?: "请求失败，请稍后重试"
+    val lower = detail.lowercase()
+    return when {
+        lower == "not_authenticated" || lower.contains("not_authenticated") ->
+            "尚未激活随机 IP 账号，请先用额度卡密激活"
+        lower.contains("invalid_access_token") || lower == "unauthorized" ->
+            "登录状态已失效，请重新同步额度或重新激活"
+        lower.contains("trial") ->
+            "服务端已停止发放免费试用，请使用额度卡密激活随机 IP"
+        lower.contains("invalid_redeem_card_code") ->
+            "卡密格式不正确，应为 16 位字母或数字"
+        lower.contains("quota_exhausted") ->
+            "随机 IP 额度已用完，请兑换卡密后重试"
+        lower.contains("session_persist_failed") ->
+            "登录凭据保存失败，请重试；若持续失败请重启应用"
+        lower.startsWith("http_5") ->
+            "服务端暂时不可用（${detail.removePrefix("http_")}）"
+        lower.startsWith("network_error") ->
+            "网络请求失败，请检查网络后重试"
+        lower == "invalid_response:access_token" ->
+            "服务端返回的登录凭据校验失败，请重试"
+        else -> detail
+    }
+}

@@ -9,6 +9,7 @@ import com.surveycontroller.android.core.backend.ContactClient
 import com.surveycontroller.android.core.backend.ContactMessageType
 import com.surveycontroller.android.core.backend.IpUsageSummary
 import com.surveycontroller.android.core.backend.RandomIpSession
+import com.surveycontroller.android.core.backend.backendErrorMessage
 import com.surveycontroller.android.core.engine.RunEngine
 import com.surveycontroller.android.core.engine.RunForegroundService
 import com.surveycontroller.android.core.engine.RunProgress
@@ -117,12 +118,20 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /** 激活 / 恢复随机 IP 账号。v5 起服务端不再保证发放免费试用，失败时引导用卡密激活。 */
     fun activateTrial() {
         viewModelScope.launch {
             _account.value = _account.value.copy(busy = true, message = null)
-            runCatching { backend.activateTrial() }
-                .onSuccess { _account.value = _account.value.copy(busy = false, session = it, message = "试用领取成功") }
-                .onFailure { _account.value = _account.value.copy(busy = false, message = "领取失败：${it.message}") }
+            runCatching { backend.ensureSession() }
+                .onSuccess { session ->
+                    val text = when {
+                        session.ready -> "账号已就绪"
+                        session.authenticated -> "已激活（旧版会话），可点“同步额度”升级登录凭据"
+                        else -> "未获得账号，请重试或使用额度卡密激活"
+                    }
+                    _account.value = _account.value.copy(busy = false, session = session, message = text)
+                }
+                .onFailure { _account.value = _account.value.copy(busy = false, message = backendErrorMessage(it)) }
         }
     }
 
@@ -131,7 +140,7 @@ class MainViewModel @Inject constructor(
             _account.value = _account.value.copy(busy = true, message = null)
             runCatching { backend.syncQuota() }
                 .onSuccess { _account.value = _account.value.copy(busy = false, session = it, message = "额度已同步") }
-                .onFailure { _account.value = _account.value.copy(busy = false, message = "同步失败：${it.message}") }
+                .onFailure { _account.value = _account.value.copy(busy = false, message = backendErrorMessage(it)) }
         }
     }
 
@@ -139,8 +148,14 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             _account.value = _account.value.copy(busy = true, message = null)
             runCatching { backend.redeemCard(code) }
-                .onSuccess { _account.value = _account.value.copy(busy = false, session = it, message = "兑换成功") }
-                .onFailure { _account.value = _account.value.copy(busy = false, message = "兑换失败：${it.message}") }
+                .onSuccess {
+                    _account.value = _account.value.copy(
+                        busy = false,
+                        session = it,
+                        message = if (it.ready) "兑换成功，账号已激活" else "兑换成功",
+                    )
+                }
+                .onFailure { _account.value = _account.value.copy(busy = false, message = backendErrorMessage(it)) }
         }
     }
 

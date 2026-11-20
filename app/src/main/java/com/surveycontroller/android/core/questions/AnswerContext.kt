@@ -28,7 +28,17 @@ interface AiTextProvider {
     suspend fun prefill(questions: List<Pair<SurveyQuestionMeta, Int>>, threadName: String): Map<Int, List<String>> = emptyMap()
 }
 
-class AiTextException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+/**
+ * AI 填空失败。
+ * [retryable] 对齐官方 v5 `AIErrorKind`：网络/限流/5xx 与不可解析响应可重试，
+ * 配置类错误（缺 key、地址非法）不重试，避免无意义地放大失败率。
+ */
+class AiTextException(
+    message: String,
+    cause: Throwable? = null,
+    val retryable: Boolean = false,
+    val statusCode: Int = 0,
+) : RuntimeException(message, cause)
 
 /** 人设权重提升。阶段6实现，默认透传。 */
 interface PersonaBoost {

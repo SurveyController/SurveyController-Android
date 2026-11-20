@@ -269,6 +269,73 @@ class OpenAiTextProviderTest {
         assertEquals(listOf("答案A", "答案B"), result[1])
     }
 
+    @Test
+    fun multi_blank_parses_json_array_response() = runBlocking {
+        // v5 起多空题要求模型输出 JSON 字符串数组
+        val http = RecordingHttpClient(
+            responseBody = """{"choices":[{"message":{"content":"[\"答案一\", \"答案二\"]"}}]}""",
+        )
+        val provider = OpenAiTextProvider(http, "https://api.example.com/v1", "sk-test", "model-x", "")
+
+        val answers = provider.generate(
+            SurveyQuestionMeta(num = 1, title = "请填写姓名与电话"),
+            blankCount = 2,
+            threadName = "T1",
+        )
+
+        assertEquals(listOf("答案一", "答案二"), answers)
+        assertTrue(JSONObject(http.lastBody).toString().contains("JSON 字符串数组"))
+    }
+
+    @Test
+    fun multi_blank_still_accepts_legacy_separator() = runBlocking {
+        val http = RecordingHttpClient(
+            responseBody = """{"choices":[{"message":{"content":"答案一||答案二"}}]}""",
+        )
+        val provider = OpenAiTextProvider(http, "https://api.example.com/v1", "sk-test", "model-x", "")
+
+        val answers = provider.generate(
+            SurveyQuestionMeta(num = 1, title = "请填写姓名与电话"),
+            blankCount = 2,
+            threadName = "T1",
+        )
+
+        assertEquals(listOf("答案一", "答案二"), answers)
+    }
+
+    @Test
+    fun retries_on_rate_limit_then_succeeds() = runBlocking {
+        val http = QueueHttpClient(
+            HttpResponse(statusCode = 429, body = "{}", finalUrl = ""),
+            HttpResponse(
+                statusCode = 200,
+                body = """{"choices":[{"message":{"content":"恢复后的答案"}}]}""",
+                finalUrl = "",
+            ),
+        )
+        val provider = OpenAiTextProvider(http, "https://api.example.com/v1", "sk-test", "model-x", "")
+
+        val answers = provider.generate(SurveyQuestionMeta(num = 1, title = "请填写"), blankCount = 1, threadName = "T1")
+
+        assertEquals(listOf("恢复后的答案"), answers)
+        assertEquals(2, http.urls.size)
+    }
+
+    @Test
+    fun does_not_retry_on_configuration_error() = runBlocking {
+        val http = RecordingHttpClient("{}")
+        val provider = OpenAiTextProvider(http, "", "sk-test", "model-x", "")
+
+        try {
+            provider.generate(SurveyQuestionMeta(num = 1, title = "请填写"), blankCount = 1, threadName = "T1")
+            fail("应当抛出配置错误")
+        } catch (e: AiTextException) {
+            assertEquals("自定义 AI Base URL 为空", e.message)
+            assertTrue(!e.retryable)
+        }
+        assertEquals("", http.lastUrl)
+    }
+
     private class RecordingHttpClient(private val responseBody: String) : HttpClient() {
         var lastUrl: String = ""
         var lastBody: String = ""
