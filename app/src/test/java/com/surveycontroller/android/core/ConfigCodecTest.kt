@@ -2074,4 +2074,75 @@ class ConfigCodecTest {
         assertEquals(5, restored.preserved.reverseFillThreads)
         assertEquals(1, restored.questions.size)
     }
+
+    @Test
+    fun serialize_writes_desktop_schema_v2_and_keeps_legacy_key() {
+        val q = SurveyQuestionMeta(num = 1, title = "姓名", typeCode = "1")
+        val def = SurveyDefinition(SurveyProviderType.WJX, "https://www.wjx.cn/vm/abc.aspx", "测试", listOf(q))
+        val json = ConfigCodec.serialize(SurveyConfigDraft.fromDefinition(def))
+        assertTrue(json.contains("\"schema_version\": 2"))
+        assertTrue(json.contains("\"config_schema_version\": 6"))
+        assertTrue(json.contains("\"ai_config_mode\": \"inherit\""))
+    }
+
+    @Test
+    fun deserialize_accepts_v5_config_with_only_schema_version() {
+        val q = SurveyQuestionMeta(num = 1, title = "姓名", typeCode = "1")
+        val def = SurveyDefinition(SurveyProviderType.WJX, "https://www.wjx.cn/vm/abc.aspx", "测试", listOf(q))
+        val payload = JSONObject(ConfigCodec.serialize(SurveyConfigDraft.fromDefinition(def)))
+        payload.remove("config_schema_version")
+        payload.put("schema_version", 2)
+        payload.put("question_entries", org.json.JSONArray().put(JSONObject().put("question_num", 1).put("question_type", "text")))
+
+        val restored = ConfigCodec.deserialize(payload.toString())
+        assertEquals("测试", restored.definition.title)
+        assertEquals(1, restored.questions.size)
+    }
+
+    @Test
+    fun deserialize_accepts_config_without_any_version_field() {
+        // v4.1.0 导出没有版本字段，按兼容处理
+        val json = """
+            {
+              "url": "https://www.wjx.cn/vm/abc.aspx",
+              "survey_title": "无版本配置",
+              "survey_provider": "wjx",
+              "questions_info": [{"num": 1, "title": "选择", "type_code": "3", "options": 2, "option_texts": ["A", "B"]}]
+            }
+        """.trimIndent()
+
+        val restored = ConfigCodec.deserialize(json)
+        assertEquals("无版本配置", restored.definition.title)
+    }
+
+    @Test
+    fun deserialize_rejects_future_desktop_schema() {
+        val json = """
+            {
+              "schema_version": 3,
+              "url": "https://www.wjx.cn/vm/abc.aspx",
+              "survey_title": "未来版本"
+            }
+        """.trimIndent()
+
+        val error = assertThrows(IllegalArgumentException::class.java) { ConfigCodec.deserialize(json) }
+        assertTrue(error.message.orEmpty().contains("更高版本的桌面端"))
+    }
+
+    @Test
+    fun deserialize_honors_explicit_ai_config_mode() {
+        val json = """
+            {
+              "schema_version": 2,
+              "url": "https://www.wjx.cn/vm/abc.aspx",
+              "survey_title": "继承配置",
+              "ai_config_mode": "inherit",
+              "ai_api_key": "should-be-ignored",
+              "questions_info": [{"num": 1, "title": "选择", "type_code": "3", "options": 2, "option_texts": ["A", "B"]}]
+            }
+        """.trimIndent()
+
+        val restored = ConfigCodec.deserialize(json)
+        assertTrue(!restored.preserved.importedAiConfig.present)
+    }
 }

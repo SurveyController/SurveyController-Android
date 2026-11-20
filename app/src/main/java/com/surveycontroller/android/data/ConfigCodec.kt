@@ -15,11 +15,21 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 运行时配置序列化/反序列化。对齐桌面端 software/core/config/codec.py 的 schema v6 字段名，
- * 实现配置导出/导入与跨设备同步。
+ * 运行时配置序列化/反序列化。对齐桌面端 software/core/config/codec.py。
+ *
+ * 官方 v5.0.0 把配置版本改成 `schema_version = 2`（此前 v4.0.x 用 `config_schema_version = 6`，
+ * v4.1.0 一度移除了版本字段）。为了同时兼容旧版安卓、旧桌面端与 v5，
+ * 导出时两个键都写，导入时按“较新者优先、超出上限才拒绝”的规则校验。
  */
 object ConfigCodec {
-    const val SCHEMA_VERSION = 6
+    /** 官方 v5 配置版本，字段名 schema_version。 */
+    const val DESKTOP_SCHEMA_VERSION = 2
+
+    /** 桌面端 v4.0.x 与旧版安卓使用的版本号，字段名 config_schema_version。 */
+    const val LEGACY_SCHEMA_VERSION = 6
+
+    /** 旧调用点仍引用 SCHEMA_VERSION，保持指向自研字段以免破坏既有测试。 */
+    const val SCHEMA_VERSION = LEGACY_SCHEMA_VERSION
     private const val DEFAULT_ANSWER_DURATION_MIN = 60
     private const val DEFAULT_ANSWER_DURATION_MAX = 120
     private const val MAX_ANSWER_DURATION_SECONDS = 30 * 60
@@ -32,7 +42,8 @@ object ConfigCodec {
         val def = draft.definition
         val p = draft.params
         val root = JSONObject()
-        root.put("config_schema_version", SCHEMA_VERSION)
+        root.put("schema_version", DESKTOP_SCHEMA_VERSION)
+        root.put("config_schema_version", LEGACY_SCHEMA_VERSION)
         root.put("url", def.url)
         root.put("survey_title", def.title)
         root.put("survey_provider", def.provider.id)
@@ -54,8 +65,10 @@ object ConfigCodec {
         root.put("pause_on_aliyun_captcha", p.pauseOnAliyunCaptcha)
         root.put("ai_mode", p.aiMode)
         val ai = draft.preserved.importedAiConfig
+        // v5 用显式意图代替“有没有 ai_* 字段”的隐式判断
+        root.put("ai_config_mode", if (ai.present) "override" else "inherit")
         if (ai.present) {
-            root.put("ai_provider", ai.provider.ifBlank { "deepseek" })
+            root.put("ai_provider", ai.provider.ifBlank { "custom" })
             root.put("ai_api_key", ai.apiKey)
             root.put("ai_base_url", ai.baseUrl)
             root.put("ai_api_protocol", ai.apiProtocol.ifBlank { "auto" })
@@ -81,9 +94,16 @@ object ConfigCodec {
         for (q in def.questions) questionsInfo.put(serializeMeta(q, def.provider.id))
         root.put("questions_info", questionsInfo)
 
-        // 题目配置
+        // 题目配置（附带 v5 稳定题目 ID，便于桌面端复用答案规则）
+        val questionIdsByNum = def.questions.associate {
+            it.num to it.questionId.trim().ifEmpty { stableQuestionId(it, def.provider.id) }
+        }
         val entries = JSONArray()
-        for (q in draft.questions) entries.put(serializeEntry(q, def.provider.id))
+        for (q in draft.questions) {
+            val entry = serializeEntry(q, def.provider.id)
+            questionIdsByNum[q.num]?.takeIf { it.isNotEmpty() }?.let { entry.put("question_id", it) }
+            entries.put(entry)
+        }
         root.put("question_entries", entries)
         return root.toString(2)
     }
@@ -117,6 +137,8 @@ object ConfigCodec {
         put("provider_question_id", q.providerQuestionId.trim())
         put("provider_page_id", q.providerPageId.trim())
         put("provider_type", q.providerType.trim())
+        val stableId = q.questionId.trim().ifEmpty { stableQuestionId(q, defaultProvider) }
+        if (stableId.isNotEmpty()) put("question_id", stableId)
         q.providerPageRaw?.let { put("provider_page_raw", JSONObject(it)) }
         put("is_location", q.isLocation)
         put("is_rating", q.isRating)
@@ -297,6 +319,23 @@ object ConfigCodec {
         put("bias_preset", psychoBias)
     }
 
+    /**
+     * 稳定题目 ID，对齐官方 v5 `run_plan.question_id()`：
+     * 有平台原生题号时用 `provider:page:id`，否则用 `provider:local:<sha1 前 12 位>`。
+     */
+    private fun stableQuestionId(q: SurveyQuestionMeta, defaultProvider: String): String {
+        val provider = normalizeProviderId(q.provider).ifBlank { defaultProvider }.lowercase()
+        val providerId = q.providerQuestionId.trim()
+        val pageId = q.providerPageId.trim()
+        if (providerId.isNotEmpty()) {
+            return if (pageId.isNotEmpty()) "$provider:$pageId:$providerId" else "$provider:$providerId"
+        }
+        val raw = listOf(provider, pageId, q.num.toString(), q.title.trim()).joinToString("|")
+        val digest = java.security.MessageDigest.getInstance("SHA-1").digest(raw.toByteArray(Charsets.UTF_8))
+        val prefix = digest.joinToString("") { "%02x".format(it) }.take(12)
+        return "$provider:local:$prefix"
+    }
+
     fun deserialize(json: String): SurveyConfigDraft {
         val root = JSONObject(json)
         ensureSupportedConfigPayload(root)
@@ -456,6 +495,7 @@ object ConfigCodec {
             unsupported = unsupported,
             unsupportedReason = if (unsupported) unsupportedReason.ifBlank { "当前平台暂不支持该题型" } else unsupportedReason,
             description = o.optString("description", "").trim(),
+            questionId = o.optString("question_id", "").trim(),
         )
     }
 
@@ -1069,12 +1109,17 @@ object ConfigCodec {
 
     private fun JSONObject.importedAiConfig(): ImportedAiConfig {
         val keys = listOf("ai_mode", "ai_provider", "ai_api_key", "ai_base_url", "ai_api_protocol", "ai_model", "ai_system_prompt")
-        val present = keys.any { has(it) }
+        // v5 用 ai_config_mode 显式表达意图；v4 及更早版本靠“是否出现 ai_* 字段”推断
+        val present = when (optString("ai_config_mode", "").trim().lowercase()) {
+            "override" -> true
+            "inherit" -> false
+            else -> keys.any { has(it) }
+        }
         val mode = normalizeAiMode(optString("ai_mode", "free"))
         return ImportedAiConfig(
             present = present,
             mode = mode,
-            provider = optString("ai_provider", "deepseek").ifBlank { "deepseek" },
+            provider = optString("ai_provider", "custom").ifBlank { "custom" },
             apiKey = optString("ai_api_key", ""),
             baseUrl = optString("ai_base_url", ""),
             apiProtocol = optString("ai_api_protocol", "auto").ifBlank { "auto" },
@@ -1093,13 +1138,26 @@ object ConfigCodec {
         if (legacyKeys.isNotEmpty()) {
             throw IllegalArgumentException("配置文件使用了已移除的旧字段（${legacyKeys.joinToString("、")}），请先用桌面端新版重新保存后再导入")
         }
-        val rawVersion = root.opt("config_schema_version")
-        val version = when (rawVersion) {
-            is Number -> rawVersion.toInt()
-            else -> rawVersion?.toString()?.trim()?.toIntOrNull() ?: 0
+        val desktopVersion = configVersion(root, "schema_version")
+        val androidVersion = configVersion(root, "config_schema_version")
+        if (desktopVersion != null && desktopVersion > DESKTOP_SCHEMA_VERSION) {
+            throw IllegalArgumentException(
+                "配置文件来自更高版本的桌面端（schema v$desktopVersion，当前最高支持 v$DESKTOP_SCHEMA_VERSION），请升级 App 后再导入",
+            )
         }
-        if (version != SCHEMA_VERSION) {
-            throw IllegalArgumentException("配置文件版本不受支持（当前仅支持 schema v$SCHEMA_VERSION，实际为 v$version）")
+        if (androidVersion != null && androidVersion != LEGACY_SCHEMA_VERSION) {
+            throw IllegalArgumentException(
+                "配置文件版本不受支持（当前仅支持 schema v$LEGACY_SCHEMA_VERSION，实际为 v$androidVersion）",
+            )
+        }
+        // 两个版本键都缺失：来自 v4.1.0（该版本移除了版本字段）或手工编辑的配置，按兼容处理。
+    }
+
+    private fun configVersion(root: JSONObject, key: String): Int? {
+        if (!root.has(key) || root.isNull(key)) return null
+        return when (val raw = root.opt(key)) {
+            is Number -> raw.toInt()
+            else -> raw?.toString()?.trim()?.toIntOrNull()
         }
     }
 

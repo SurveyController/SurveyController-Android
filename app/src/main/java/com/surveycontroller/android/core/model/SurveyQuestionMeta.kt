@@ -52,6 +52,8 @@ data class SurveyQuestionMeta(
     val unsupported: Boolean = false,
     val unsupportedReason: String = "",
     val description: String = "",
+    /** 稳定题目 ID（官方 v5 引入）：provider:page:id，缺失时由 provider:local:<sha1> 兜底。 */
+    val questionId: String = "",
 ) {
     val entryType: QuestionEntryType get() = QuestionEntryType.infer(this)
 }
