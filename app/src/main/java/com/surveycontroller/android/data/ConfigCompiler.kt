@@ -1,5 +1,6 @@
 package com.surveycontroller.android.data
 
+import com.surveycontroller.android.provider.SurveyProviderType
 import com.surveycontroller.android.core.model.ExecutionConfig
 import com.surveycontroller.android.core.model.QuestionEntryType
 import com.surveycontroller.android.core.model.SurveyQuestionMeta
@@ -386,7 +387,7 @@ object ConfigCompiler {
 
         val p = draft.params
         return ExecutionConfig(
-            url = draft.definition.url,
+            url = SurveyProviderType.normalizeParseUrl(draft.definition.url),
             surveyTitle = draft.definition.title,
             surveyProvider = draft.definition.provider.id,
             singleProb = singleProb,

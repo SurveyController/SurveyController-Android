@@ -7,6 +7,7 @@ import com.surveycontroller.android.core.model.ExecutionState
 import com.surveycontroller.android.core.network.BackendProxyPool
 import com.surveycontroller.android.core.network.HttpClient
 import com.surveycontroller.android.core.network.ProxyPool
+import com.surveycontroller.android.core.network.SurveySubmitTransportError
 import com.surveycontroller.android.core.psychometrics.JointOptimizer
 import com.surveycontroller.android.core.questions.AiTextException
 import com.surveycontroller.android.core.questions.PsychoPlanLookup
@@ -15,18 +16,19 @@ import com.surveycontroller.android.core.reverse_fill.ReverseFillRuntime
 import com.surveycontroller.android.core.reverse_fill.ReverseFillSpec
 import com.surveycontroller.android.provider.ProviderRegistry
 import com.surveycontroller.android.provider.SubmitResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -58,12 +60,19 @@ data class SlotStatus(
 /**
  * 协程并发运行引擎。复刻 software/core/engine/async_engine.py 的多槽调度 + 停止/暂停/恢复 + 目标份数。
  */
-class RunEngine(
-    private val registry: ProviderRegistry,
+class RunEngine internal constructor(
+    private val submit: suspend (ExecutionConfig, ExecutionState, String, String?, String?) -> SubmitResult,
     private val httpClient: HttpClient = HttpClient(),
     private val backend: BackendClient? = null,
     private val proxyPoolFactory: ((ExecutionConfig) -> ProxyProvider?)? = null,
 ) {
+    constructor(
+        registry: ProviderRegistry,
+        httpClient: HttpClient = HttpClient(),
+        backend: BackendClient? = null,
+        proxyPoolFactory: ((ExecutionConfig) -> ProxyProvider?)? = null,
+    ) : this(registry::fillSurveyHttp, httpClient, backend, proxyPoolFactory)
+
     private companion object {
         const val MAX_WORKERS = 16
     }
@@ -71,8 +80,9 @@ class RunEngine(
     private val _progress = MutableStateFlow(RunProgress())
     val progress: StateFlow<RunProgress> = _progress.asStateFlow()
 
-    private var job: Job? = null
-    private val stopFlag = AtomicBoolean(false)
+    @Volatile private var job: Job? = null
+    private val stopFlag = MutableStateFlow(false)
+    private val admissionsChanged = MutableStateFlow(0)
     private val pauseFlag = AtomicBoolean(false)
     private val logs = ArrayDeque<String>()
     private val logLock = Any()
@@ -109,13 +119,16 @@ class RunEngine(
         failureReasons.merge(key, 1) { a, b -> a + b }
     }
 
-    val isRunning: Boolean get() = job?.isActive == true
+    val isRunning: Boolean get() = job?.isCompleted == false
 
+    @Synchronized
     fun start(config: ExecutionConfig, parentScope: CoroutineScope, reverseFillSpec: ReverseFillSpec? = null) {
         if (isRunning) return
-        stopFlag.set(false)
+        stopFlag.value = false
         pauseFlag.set(false)
+        synchronized(logLock) { logs.clear() }
         val state = ExecutionState(config)
+        state.stopRequested = { stopFlag.value }
         val target = maxOf(1, config.targetNum)
         val configuredWorkers = config.numThreads.coerceIn(1, MAX_WORKERS)
         val workerCount = if (reverseFillSpec != null) {
@@ -168,14 +181,20 @@ class RunEngine(
         (1..workerCount).forEach { slotStatuses["Slot-$it"] = SlotStatus("Slot-$it") }
         _progress.value = RunProgress(RunStatus.RUNNING, target, 0, 0, "运行中", slotStatuses = slotStatuses.toMap())
 
-        val supervisor = SupervisorJob(parentScope.coroutineContext[Job])
-        val scope = CoroutineScope(parentScope.coroutineContext + supervisor + Dispatchers.IO)
-        job = scope.launch {
-            val workers = (1..workerCount).map { slot ->
-                launch { runWorker("Slot-$slot", config, state, target, workerCount, claimed, proxyPool, jointPlan, sampleByThread, sampleCounter) }
+        job = parentScope.launch(Dispatchers.IO) {
+            try {
+                coroutineScope {
+                    for (slot in 1..workerCount) {
+                        launch { runWorker("Slot-$slot", config, state, target, workerCount, claimed, proxyPool, jointPlan, sampleByThread, sampleCounter) }
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                stopWithReason(state, error.message ?: "任务异常停止")
+            } finally {
+                finish(state, target)
             }
-            workers.forEach { it.join() }
-            finish(state, target)
         }
     }
 
@@ -191,26 +210,14 @@ class RunEngine(
         sampleByThread: ConcurrentHashMap<String, Int>,
         sampleCounter: AtomicInteger,
     ) {
-        while (currentCoroutineContext().isActive) {
-            if (stopFlag.get()) break
-            if (state.curNum >= target) break
-            while (pauseFlag.get() && !stopFlag.get()) {
-                _progress.update { it.copy(status = RunStatus.PAUSED) }
-                delay(200)
-            }
-            if (stopFlag.get()) break
-            // 认领一个名额，避免并发超额
-            if (claimed.incrementAndGet() > target) {
-                claimed.decrementAndGet()
-                break
-            }
+        while (claimSubmission(state, target, claimed)) {
             // 预约心理测量样本与反向填充样本
             if (jointPlan != null && sampleByThread[name] == null) {
                 sampleByThread[name] = sampleCounter.getAndIncrement()
             }
             val reverseOk = reverseRuntime?.reserve(name) ?: true
             if (!reverseOk) {
-                claimed.decrementAndGet()
+                releaseClaim(claimed)
                 stopWithReason(state, "反填样本已耗尽，剩余样本不足以完成目标份数", category = "reverse_fill_exhausted")
                 break
             }
@@ -219,7 +226,7 @@ class RunEngine(
             // 代理获取移到 fillSurveyHttp 调用前；代理失败再处理 continue
             val proxy = if (config.randomProxyIpEnabled) proxyPool?.acquire(config) else null
             if (config.randomProxyIpEnabled && proxy == null) {
-                claimed.decrementAndGet()
+                releaseClaim(claimed)
                 sampleByThread.remove(name)
                 reverseRuntime?.discard(name, requeue = true)
                 slotResult(name, false)
@@ -238,30 +245,74 @@ class RunEngine(
                     break
                 }
                 val interval = sampleInterval(config)
-                if (interval > 0) delay(interval * 1000L)
+                waitForInterval(interval)
                 continue
             }
             // 对标核心库提交生命周期修复：停止信号在提交准备阶段到达时不得继续 POST。
-            if (stopFlag.get() || !currentCoroutineContext().isActive) {
-                claimed.decrementAndGet()
+            if (stopFlag.value || !currentCoroutineContext().isActive) {
+                releaseClaim(claimed)
                 sampleByThread.remove(name)
                 reverseRuntime?.discard(name, requeue = true)
                 break
             }
             setSlot(name, "提交中", running = true)
             val result = try {
-                registry.fillSurveyHttp(config, state, name, proxy, ua)
+                submit(config, state, name, proxy, ua)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SurveySubmitTransportError.ProxyTunnel) {
+                SubmitResult.ProxyFailure(e.message.orEmpty())
+            } catch (e: SurveySubmitTransportError.ResultUnknown) {
+                SubmitResult.Unknown(e.message.orEmpty())
             } catch (e: AiTextException) {
                 SubmitResult.AiFailure(e.message ?: "AI 填空失败")
             } catch (e: Exception) {
                 SubmitResult.Failure(e.message ?: e.toString())
             }
             when (result) {
+                SubmitResult.Cancelled -> {
+                    releaseClaim(claimed)
+                    sampleByThread.remove(name)
+                    reverseRuntime?.discard(name, requeue = true)
+                    break
+                }
+                is SubmitResult.Unknown -> {
+                    sampleByThread.remove(name)
+                    state.discardPendingDistribution(name)
+                    slotResult(name, false)
+                    state.incrementFail()
+                    failureReasons.merge("提交结果不确定", 1, Int::plus)
+                    setSlot(name, "提交结果不确定", running = false)
+                    stopWithReason(
+                        state,
+                        "提交结果不确定，请核对服务器记录后再运行：${result.message}",
+                        category = "submission_result_unknown",
+                        failureReason = "submission_result_unknown",
+                    )
+                    break
+                }
+                is SubmitResult.ProxyFailure -> {
+                    releaseClaim(claimed)
+                    sampleByThread.remove(name)
+                    state.discardPendingDistribution(name)
+                    reverseRuntime?.discard(name, requeue = true)
+                    slotResult(name, false)
+                    failureReasons.merge("代理连接失败", 1, Int::plus)
+                    setSlot(name, "代理连接失败", running = false)
+                    log("[$name] 代理连接失败：${result.message}")
+                    val failures = proxyUnavailableCount.incrementAndGet()
+                    if (RunStopPolicy.shouldStopOnProxyUnavailable(config, failures, workerCount)) {
+                        stopWithReason(state, "代理连续连接失败，已停止", "proxy_unavailable_threshold", "proxy_unavailable")
+                        break
+                    }
+                    publish(state, target, RunStatus.RUNNING)
+                }
                 is SubmitResult.Success -> {
                     state.resetFail()
                     proxyUnavailableCount.set(0)
                     aiFailureCount.set(0)
                     val n = state.incrementSuccess()
+                    admissionsChanged.update { it + 1 }
                     proxy?.let { proxyPool?.markSuccess(it) }
                     sampleByThread.remove(name)
                     reverseRuntime?.commit(name)
@@ -272,7 +323,7 @@ class RunEngine(
                     reportSubmission(config, "success")
                 }
                 is SubmitResult.Verification -> {
-                    claimed.decrementAndGet()
+                    releaseClaim(claimed)
                     reverseRuntime?.discard(name, requeue = true)
                     slotResult(name, false)
                     recordFailure(result)
@@ -292,7 +343,7 @@ class RunEngine(
                     }
                 }
                 is SubmitResult.AiFailure -> {
-                    claimed.decrementAndGet()
+                    releaseClaim(claimed)
                     sampleByThread.remove(name)
                     reverseRuntime?.discard(name, requeue = true)
                     slotResult(name, false)
@@ -313,7 +364,7 @@ class RunEngine(
                     }
                 }
                 is SubmitResult.ProviderUnavailable -> {
-                    claimed.decrementAndGet()
+                    releaseClaim(claimed)
                     sampleByThread.remove(name)
                     reverseRuntime?.discard(name, requeue = true)
                     slotResult(name, false)
@@ -331,7 +382,7 @@ class RunEngine(
                     break
                 }
                 else -> {
-                    claimed.decrementAndGet()
+                    releaseClaim(claimed)
                     val discardedSample = reverseRuntime?.markFailed(name, maxRetries = 1) == true
                     slotResult(name, false)
                     recordFailure(result)
@@ -354,7 +405,7 @@ class RunEngine(
                 }
             }
             val interval = sampleInterval(config)
-            if (interval > 0) delay(interval * 1000L)
+            if (state.curNum < target) waitForInterval(interval)
         }
     }
 
@@ -383,9 +434,33 @@ class RunEngine(
         }
 
     private fun stopWithReason(state: ExecutionState, reason: String, category: String = "fail", failureReason: String = "") {
-        stopFlag.set(true)
         state.markTerminalStop(category, failureReason = failureReason, message = reason)
         log(reason)
+        stopFlag.value = true
+        admissionsChanged.update { it + 1 }
+    }
+
+    private suspend fun claimSubmission(state: ExecutionState, target: Int, claimed: AtomicInteger): Boolean {
+        while (currentCoroutineContext().isActive) {
+            val revision = admissionsChanged.value
+            if (stopFlag.value || state.curNum >= target) return false
+            val count = claimed.get()
+            if (!pauseFlag.get() && count < target) {
+                if (claimed.compareAndSet(count, count + 1)) return true
+                continue
+            }
+            admissionsChanged.first { it != revision }
+        }
+        return false
+    }
+
+    private fun releaseClaim(claimed: AtomicInteger) {
+        claimed.decrementAndGet()
+        admissionsChanged.update { it + 1 }
+    }
+
+    private suspend fun waitForInterval(seconds: Int) {
+        if (seconds > 0) withTimeoutOrNull(seconds * 1000L) { stopFlag.first { it } }
     }
 
     private fun pickUserAgent(config: ExecutionConfig): String? {
@@ -406,7 +481,7 @@ class RunEngine(
     private fun finish(state: ExecutionState, target: Int) {
         val status = when {
             state.terminalStopCategory.isNotEmpty() && state.curNum < target -> RunStatus.FAILED
-            stopFlag.get() && state.curNum < target -> RunStatus.IDLE
+            stopFlag.value && state.curNum < target -> RunStatus.IDLE
             else -> RunStatus.FINISHED
         }
         val msg = when (status) {
@@ -420,7 +495,12 @@ class RunEngine(
 
     private fun publish(state: ExecutionState, target: Int, status: RunStatus, message: String = "") {
         _progress.value = RunProgress(
-            status = status,
+            status = when {
+                status != RunStatus.RUNNING -> status
+                stopFlag.value -> RunStatus.STOPPING
+                pauseFlag.get() -> RunStatus.PAUSED
+                else -> status
+            },
             target = target,
             success = state.curNum,
             fail = state.curFail,
@@ -443,22 +523,30 @@ class RunEngine(
     private fun snapshotLogs(): List<String> = synchronized(logLock) { logs.toList() }
 
     fun pause() {
-        if (!isRunning) return
+        if (!isRunning || stopFlag.value) return
         pauseFlag.set(true)
         _progress.update { it.copy(status = RunStatus.PAUSED, message = "已暂停") }
     }
 
     fun resume() {
-        if (!isRunning) return
+        if (!isRunning || stopFlag.value) return
         pauseFlag.set(false)
+        admissionsChanged.update { it + 1 }
         _progress.update { it.copy(status = RunStatus.RUNNING, message = "运行中") }
     }
 
     suspend fun stop() {
-        stopFlag.set(true)
-        _progress.update { it.copy(status = RunStatus.STOPPING, message = "停止中") }
-        job?.cancelAndJoin()
-        job = null
+        val active = job?.takeUnless { it.isCompleted } ?: return
+        _progress.update {
+            if (it.status == RunStatus.RUNNING || it.status == RunStatus.PAUSED) {
+                it.copy(status = RunStatus.STOPPING, message = "停止中")
+            } else {
+                it
+            }
+        }
+        stopFlag.value = true
+        admissionsChanged.update { it + 1 }
+        active.join()
     }
 }
 

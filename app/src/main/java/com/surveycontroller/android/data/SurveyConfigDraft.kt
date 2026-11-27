@@ -56,6 +56,7 @@ data class QuestionConfigDraft(
     val matrixBiasPresets: MutableList<String> = mutableListOf(),
     // 占比滑块中被锁定的选项（拖动其他项时保持不变）；纯 UI 辅助，不影响提交
     val lockedOptions: Set<Int> = emptySet(),
+    val questionId: String = "",
 )
 
 /**
@@ -143,6 +144,7 @@ data class SurveyConfigDraft(
                 surveyProvider = q.provider.ifBlank { providerId },
                 providerQuestionId = q.providerQuestionId,
                 providerPageId = q.providerPageId,
+                questionId = q.questionId,
                 optionWeights = forcedOptionWeights
                     ?: evenPercents(if (entry == QuestionEntryType.TEXT || entry == QuestionEntryType.MULTI_TEXT) defaultTextCandidates.size else optionCount),
                 multiProbabilities = MutableList(optionCount) { 50.0 },

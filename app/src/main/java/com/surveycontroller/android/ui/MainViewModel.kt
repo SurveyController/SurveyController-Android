@@ -36,7 +36,9 @@ import com.surveycontroller.android.provider.ProviderRegistry
 import com.surveycontroller.android.provider.SurveyProviderType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -98,6 +100,9 @@ class MainViewModel @Inject constructor(
     private val _account = MutableStateFlow(AccountState())
     val account: StateFlow<AccountState> = _account.asStateFlow()
 
+    private var parseJob: Job? = null
+    private var parseGeneration = 0
+    private var runStartJob: Job? = null
     private var reverseFillSpec: ReverseFillSpec? = null
     private var reverseFillUri: Uri? = null
     private var reverseFillDisplayName: String? = null
@@ -160,25 +165,36 @@ class MainViewModel @Inject constructor(
     }
 
     fun setUrl(url: String) {
-        _workbench.value = _workbench.value.copy(url = url, error = null)
+        if (_workbench.value.url == url) return
+        invalidateParse()
+        _workbench.value = _workbench.value.copy(url = url, parsing = false, error = null)
+    }
+
+    private fun invalidateParse() {
+        parseGeneration += 1
+        parseJob?.cancel()
     }
 
     fun supportedUrl(url: String): Boolean = SurveyProviderType.isSupportedUrl(url)
 
     fun parse() {
-        val url = _workbench.value.url.trim()
+        invalidateParse()
+        val generation = parseGeneration
+        val url = SurveyProviderType.normalizeParseUrl(_workbench.value.url)
         if (url.isEmpty()) {
-            _workbench.value = _workbench.value.copy(error = "请输入问卷链接")
+            _workbench.value = _workbench.value.copy(parsing = false, error = "请输入问卷链接")
             return
         }
-        _workbench.value = _workbench.value.copy(parsing = true, error = null)
-        viewModelScope.launch {
+        _workbench.value = _workbench.value.copy(url = url, parsing = true, error = null)
+        parseJob = viewModelScope.launch {
             try {
                 val def = registry.parseSurvey(url)
+                if (generation != parseGeneration) return@launch
                 if (def.questions.isEmpty()) {
                     _workbench.value = _workbench.value.copy(parsing = false, error = "未解析到题目，请确认链接已公开")
                 } else {
                     val settings = runCatching { settingsStore.settings.first() }.getOrDefault(SettingsStore.Settings())
+                    if (generation != parseGeneration) return@launch
                     val draft = SurveyConfigDraft.fromDefinition(def).let {
                         it.copy(
                             params = it.params.copy(
@@ -209,8 +225,12 @@ class MainViewModel @Inject constructor(
                         ),
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _workbench.value = _workbench.value.copy(parsing = false, error = e.message ?: "解析失败")
+                if (generation == parseGeneration) {
+                    _workbench.value = _workbench.value.copy(parsing = false, error = e.message ?: "解析失败")
+                }
             }
         }
     }
@@ -291,10 +311,14 @@ class MainViewModel @Inject constructor(
     }
 
     fun startRun(onStarted: (() -> Unit)? = null) {
-        val draft = _workbench.value.draft ?: return
-        viewModelScope.launch {
+        if (runStartJob?.isActive == true || engine.isRunning) return
+        val workbench = _workbench.value
+        val draft = workbench.draft ?: return
+        if (workbench.parsing || SurveyProviderType.normalizeParseUrl(workbench.url) != draft.definition.url) return
+        runStartJob = viewModelScope.launch {
             val s = settingsStore.settings.first()
-            val reverseFillEnabled = _workbench.value.reverseFillEnabled
+            if (_workbench.value !== workbench) return@launch
+            val reverseFillEnabled = workbench.reverseFillEnabled
             val runtimeDraft = if (reverseFillEnabled) {
                 draft.copy(params = draft.params.copy(numThreads = draft.preserved.reverseFillThreads.coerceIn(1, 16)))
             } else {
@@ -334,33 +358,29 @@ class MainViewModel @Inject constructor(
             engine.start(config, viewModelScope, spec)
             _workbench.value = _workbench.value.copy(error = null)
             onStarted?.invoke()
-            // 任务结束后关闭前台服务，并按设置弹出完成通知
-            launch {
-                engine.progress.collect { p ->
-                    if (p.status == RunStatus.FINISHED || p.status == RunStatus.FAILED || p.status == RunStatus.IDLE) {
-                        RunForegroundService.stop(appContext)
-                        if (p.status != RunStatus.IDLE && s.autoSaveLogs) {
-                            RunLogArchiver.save(
-                                context = appContext,
-                                header = listOf(
-                                    "问卷：${draft.definition.title.ifEmpty { "未命名问卷" }}",
-                                    "链接：${draft.definition.url}",
-                                    "结果：成功 ${p.success} 份 · 失败 ${p.fail} 份",
-                                    "状态：${if (p.status == RunStatus.FINISHED) "已完成" else "已停止"}",
-                                ),
-                                lines = p.recentLogs,
-                                retentionCount = s.logRetentionCount,
-                            )
-                        }
-                        if (s.taskResultNotification && p.status != RunStatus.IDLE) {
-                            RunForegroundService.notifyResult(
-                                appContext,
-                                if (p.status == RunStatus.FINISHED) "任务完成" else "任务已停止",
-                                "成功 ${p.success} 份 · 失败 ${p.fail} 份",
-                            )
-                        }
-                    }
-                }
+            val result = engine.progress.first {
+                it.status == RunStatus.FINISHED || it.status == RunStatus.FAILED || it.status == RunStatus.IDLE
+            }
+            RunForegroundService.stop(appContext)
+            if (result.status != RunStatus.IDLE && s.autoSaveLogs) {
+                RunLogArchiver.save(
+                    context = appContext,
+                    header = listOf(
+                        "问卷：${draft.definition.title.ifEmpty { "未命名问卷" }}",
+                        "链接：${draft.definition.url}",
+                        "结果：成功 ${result.success} 份 · 失败 ${result.fail} 份",
+                        "状态：${if (result.status == RunStatus.FINISHED) "已完成" else "已停止"}",
+                    ),
+                    lines = result.recentLogs,
+                    retentionCount = s.logRetentionCount,
+                )
+            }
+            if (s.taskResultNotification && result.status != RunStatus.IDLE) {
+                RunForegroundService.notifyResult(
+                    appContext,
+                    if (result.status == RunStatus.FINISHED) "任务完成" else "任务已停止",
+                    "成功 ${result.success} 份 · 失败 ${result.fail} 份",
+                )
             }
         }
     }
@@ -513,8 +533,10 @@ class MainViewModel @Inject constructor(
                 reverseFillSpec = null
                 reverseFillUri = null
                 reverseFillDisplayName = importedReverseName
+                invalidateParse()
                 _workbench.value = _workbench.value.copy(
                     url = draft.definition.url,
+                    parsing = false,
                     draft = draft,
                     error = null,
                     reverseFillFileName = importedReverseName,
@@ -532,6 +554,7 @@ class MainViewModel @Inject constructor(
     fun pauseRun() = engine.pause()
     fun resumeRun() = engine.resume()
     fun stopRun() {
+        if (!engine.isRunning) runStartJob?.cancel()
         viewModelScope.launch {
             engine.stop()
             RunForegroundService.stop(appContext)
@@ -539,6 +562,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun reset() {
+        invalidateParse()
         _workbench.value = WorkbenchState()
         reverseFillSpec = null
         reverseFillUri = null

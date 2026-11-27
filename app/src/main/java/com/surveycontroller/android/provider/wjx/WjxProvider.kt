@@ -140,6 +140,7 @@ class WjxProvider(
         }
 
         state.updateThreadStatus(threadName, "提交问卷", running = true)
+        if (state.stopRequested()) return SubmitResult.Cancelled
         val resp = http.postForm(
             url = submitUrl,
             queryParams = params,
@@ -148,7 +149,11 @@ class WjxProvider(
             timeoutSeconds = 30,
             proxyAddress = proxyAddress,
         )
-        val result = WjxSubmitCodec.classifyResponse(resp.body)
+        val result = when (resp.statusCode) {
+            in 300..399 -> SubmitResult.ProviderUnavailable("问卷星提交请求收到重定向，已停止本轮")
+            in 200..299 -> WjxSubmitCodec.classifyResponse(resp.body)
+            else -> SubmitResult.Failure("HTTP ${resp.statusCode}")
+        }
         if (result is SubmitResult.Success) {
             state.commitPendingDistributionFor(answerCtx)
         } else {

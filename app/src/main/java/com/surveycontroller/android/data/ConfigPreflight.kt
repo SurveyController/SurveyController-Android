@@ -73,6 +73,10 @@ object ConfigPreflight {
         val errors = mutableListOf<Issue>()
         val warnings = mutableListOf<Issue>()
         val metaByNum = draft.definition.questions.associateBy { it.num }
+        val questionIds = ConfigCodec.resolvedQuestionIds(draft)
+        if (questionIds.size != questionIds.toSet().size) {
+            errors.add(Issue(Severity.ERROR, "运行计划包含重复的题目 ID", "请重新解析问卷并检查配置中的重复题目"))
+        }
 
         if (draft.questions.isEmpty()) {
             errors.add(Issue(Severity.ERROR, "未配置任何可作答题目", "请重新解析问卷，或导入包含 question_entries 的配置"))

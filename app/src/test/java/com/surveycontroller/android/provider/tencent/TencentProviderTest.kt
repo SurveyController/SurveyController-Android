@@ -734,6 +734,7 @@ class TencentProviderTest {
             headers: Map<String, String>,
             timeoutSeconds: Long,
             proxyAddress: String?,
+            surveySubmission: Boolean,
         ): HttpResponse {
             postUrls.add(url)
             postBodies.add(body)

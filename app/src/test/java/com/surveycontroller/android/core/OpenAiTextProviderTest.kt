@@ -347,6 +347,7 @@ class OpenAiTextProviderTest {
             headers: Map<String, String>,
             timeoutSeconds: Long,
             proxyAddress: String?,
+            surveySubmission: Boolean,
         ): HttpResponse {
             lastUrl = url
             lastBody = body
@@ -366,6 +367,7 @@ class OpenAiTextProviderTest {
             headers: Map<String, String>,
             timeoutSeconds: Long,
             proxyAddress: String?,
+            surveySubmission: Boolean,
         ): HttpResponse {
             urls.add(url)
             bodies.add(body)

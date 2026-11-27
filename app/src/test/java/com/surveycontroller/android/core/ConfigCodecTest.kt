@@ -25,6 +25,31 @@ import org.junit.Test
 class ConfigCodecTest {
 
     @Test
+    fun preserves_explicit_entry_identity_and_generates_missing_ids() {
+        val first = SurveyQuestionMeta(num = 1, title = "第一题", typeCode = "3", options = 2, providerQuestionId = "a")
+        val second = SurveyQuestionMeta(num = 2, title = "第二题", typeCode = "3", options = 2, providerQuestionId = "b")
+        val definition = SurveyDefinition(SurveyProviderType.WJX, " WWW.WJX.CN/vm/demo.aspx ", "示例", listOf(first, second))
+        val draft = SurveyConfigDraft.fromDefinition(definition)
+        val input = draft.copy(questions = listOf(draft.questions[1], draft.questions[0].copy(questionId = "imported-id")))
+
+        val restored = ConfigCodec.deserialize(ConfigCodec.serialize(input))
+        assertEquals("https://www.wjx.cn/vm/demo.aspx", restored.definition.url)
+        assertEquals(listOf("wjx:b", "imported-id"), restored.questions.map { it.questionId })
+        assertEquals(listOf("wjx:a", "wjx:b"), restored.definition.questions.map { it.questionId })
+    }
+
+    @Test
+    fun preflight_rejects_duplicate_stable_ids() {
+        val metas = (1..2).map { SurveyQuestionMeta(num = it, title = "题目 $it", typeCode = "3", options = 2) }
+        val draft = SurveyConfigDraft.fromDefinition(
+            SurveyDefinition(SurveyProviderType.WJX, "https://www.wjx.cn/vm/demo.aspx", "示例", metas),
+        )
+        val duplicates = draft.copy(questions = draft.questions.map { it.copy(questionId = "same") })
+
+        assertTrue(ConfigPreflight.validate(duplicates).blockingMessage().contains("重复的题目 ID"))
+    }
+
+    @Test
     fun round_trips_config_with_schema_v6() {
         val q1 = SurveyQuestionMeta(num = 1, title = "性别", typeCode = "3", options = 2, optionTexts = listOf("男", "女"))
         val q2 = SurveyQuestionMeta(num = 2, title = "满意度", typeCode = "5", options = 5, optionTexts = listOf("1", "2", "3", "4", "5"))

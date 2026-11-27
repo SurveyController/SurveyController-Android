@@ -176,7 +176,8 @@ class TencentProvider(
         }
 
         state.updateThreadStatus(threadName, "提交问卷", running = true)
-        val resp = http.postBody(submitUrl, body.toString(), headers = submitHeaders, timeoutSeconds = 30, proxyAddress = proxyAddress)
+        if (state.stopRequested()) return SubmitResult.Cancelled
+        val resp = http.postBody(submitUrl, body.toString(), headers = submitHeaders, timeoutSeconds = 30, proxyAddress = proxyAddress, surveySubmission = true)
         val payload = try {
             JSONObject(resp.body.ifBlank { "{}" })
         } catch (e: Exception) {
