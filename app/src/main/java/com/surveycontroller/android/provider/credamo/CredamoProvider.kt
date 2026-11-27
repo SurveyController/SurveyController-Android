@@ -107,7 +107,8 @@ class CredamoProvider(
 
         val saveUrl = "${origin.trimEnd('/')}/v1/survey/answer/noauth/save?timeCode=$timeCode&answerToken=$answerToken"
         val headers = CredamoApi.requestHeaders(origin, shortUrl, ua, answerToken, jsonBody = true)
-        val resp = http.postBody(saveUrl, body.toString(), headers = headers, timeoutSeconds = timeoutSeconds, proxyAddress = proxyAddress)
+        if (state.stopRequested()) return SubmitResult.Cancelled
+        val resp = http.postBody(saveUrl, body.toString(), headers = headers, timeoutSeconds = timeoutSeconds, proxyAddress = proxyAddress, surveySubmission = true)
         val payload = try {
             JSONObject(resp.body.ifBlank { "{}" })
         } catch (e: Exception) {

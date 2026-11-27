@@ -11,6 +11,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * 代理池、分布统计、AI 预填等子状态将在对应阶段补全。
  */
 class ExecutionState(val config: ExecutionConfig) {
+    var stopRequested: () -> Boolean = { false }
+
 
     // 运行时可挂载的反向填充解析器与心理测量计划提供者（由引擎注入）
     @Volatile var reverseFillResolver: com.surveycontroller.android.core.questions.ReverseFillResolver? = null

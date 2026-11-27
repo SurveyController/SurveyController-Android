@@ -44,7 +44,7 @@ object ConfigCodec {
         val root = JSONObject()
         root.put("schema_version", DESKTOP_SCHEMA_VERSION)
         root.put("config_schema_version", LEGACY_SCHEMA_VERSION)
-        root.put("url", def.url)
+        root.put("url", SurveyProviderType.normalizeParseUrl(def.url))
         root.put("survey_title", def.title)
         root.put("survey_provider", def.provider.id)
         root.put("target", p.targetNum)
@@ -95,14 +95,10 @@ object ConfigCodec {
         root.put("questions_info", questionsInfo)
 
         // 题目配置（附带 v5 稳定题目 ID，便于桌面端复用答案规则）
-        val questionIdsByNum = def.questions.associate {
-            it.num to it.questionId.trim().ifEmpty { stableQuestionId(it, def.provider.id) }
-        }
         val entries = JSONArray()
-        for (q in draft.questions) {
-            val entry = serializeEntry(q, def.provider.id)
-            questionIdsByNum[q.num]?.takeIf { it.isNotEmpty() }?.let { entry.put("question_id", it) }
-            entries.put(entry)
+        val questionIds = resolvedQuestionIds(draft)
+        for ((q, id) in draft.questions.zip(questionIds)) {
+            entries.put(serializeEntry(q, def.provider.id).put("question_id", id))
         }
         root.put("question_entries", entries)
         return root.toString(2)
@@ -325,12 +321,31 @@ object ConfigCodec {
      */
     private fun stableQuestionId(q: SurveyQuestionMeta, defaultProvider: String): String {
         val provider = normalizeProviderId(q.provider).ifBlank { defaultProvider }.lowercase()
-        val providerId = q.providerQuestionId.trim()
-        val pageId = q.providerPageId.trim()
+        return stableQuestionId(provider, q.providerPageId, q.providerQuestionId, q.num, q.title)
+    }
+
+    internal fun resolvedQuestionIds(draft: SurveyConfigDraft): List<String> {
+        val provider = draft.definition.provider.id
+        val metadata = draft.definition.questions
+        return draft.questions.mapIndexed { index, entry ->
+            val storedId = entry.questionId.trim()
+            if (storedId.isNotEmpty()) {
+                storedId
+            } else {
+                val meta = metadata.firstOrNull { it.num == entry.num } ?: metadata.getOrNull(index)
+                meta?.let { it.questionId.trim().ifEmpty { stableQuestionId(it, provider) } }
+                    ?: stableQuestionId(entry.surveyProvider.ifBlank { provider }, entry.providerPageId, entry.providerQuestionId, entry.num, entry.title)
+            }
+        }
+    }
+
+    private fun stableQuestionId(provider: String, page: String, question: String, num: Int, title: String): String {
+        val providerId = question.trim()
+        val pageId = page.trim()
         if (providerId.isNotEmpty()) {
             return if (pageId.isNotEmpty()) "$provider:$pageId:$providerId" else "$provider:$providerId"
         }
-        val raw = listOf(provider, pageId, q.num.toString(), q.title.trim()).joinToString("|")
+        val raw = listOf(provider, pageId, num.toString(), title.trim()).joinToString("|")
         val digest = java.security.MessageDigest.getInstance("SHA-1").digest(raw.toByteArray(Charsets.UTF_8))
         val prefix = digest.joinToString("") { "%02x".format(it) }.take(12)
         return "$provider:local:$prefix"
@@ -344,7 +359,7 @@ object ConfigCodec {
         root.optJSONArray("questions_info")?.let { arr ->
             for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { metas.add(deserializeMeta(it, provider.id)) }
         }
-        val def = SurveyDefinition(provider, root.optString("url"), root.optString("survey_title"), metas)
+        val def = SurveyDefinition(provider, SurveyProviderType.normalizeParseUrl(root.optString("url")), root.optString("survey_title"), metas)
         val answerDuration = normalizeAnswerDurationRange(root.opt("answer_duration"))
 
         val params = RunParamsDraft(
@@ -404,6 +419,10 @@ object ConfigCodec {
     }
 
     private fun resolveEntryMeta(e: JSONObject, metas: List<SurveyQuestionMeta>, defaultProvider: String): SurveyQuestionMeta? {
+        val stableId = e.optString("question_id").trim()
+        if (stableId.isNotEmpty()) {
+            metas.singleOrNull { it.questionId.trim().ifEmpty { stableQuestionId(it, defaultProvider) } == stableId }?.let { return it }
+        }
         val num = e.optInt("question_num")
         metas.firstOrNull { it.num == num }?.let { return it }
         val pageId = e.optString("provider_page_id", "").trim()
@@ -564,6 +583,7 @@ object ConfigCodec {
         val forcedOptionWeights = forcedOptionWeights(meta, entryType, optionCount)
         return QuestionConfigDraft(
             num = meta?.num ?: e.optInt("question_num"),
+            questionId = e.optString("question_id").trim().ifBlank { meta?.questionId.orEmpty() },
             title = e.optString("question_title").ifBlank { meta?.title ?: "" },
             entryType = entryType,
             optionTexts = optionTexts,
