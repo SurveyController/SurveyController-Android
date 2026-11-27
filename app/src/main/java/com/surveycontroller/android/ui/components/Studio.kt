@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ButtonColors
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
@@ -28,7 +26,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,52 +41,41 @@ internal val distributionColors = listOf(
 )
 
 @Composable
-internal fun studioActionColors(): ButtonColors = if (LocalChromeDarkTheme.current) {
-    ButtonDefaults.buttonColors(containerColor = ChromeDarkColors.action, contentColor = Color.White)
-} else {
-    ButtonDefaults.buttonColors()
-}
-
-@Composable
 internal fun studioSuccessColor(): Color =
     if (LocalChromeDarkTheme.current) ChromeDarkColors.success else Color(0xFF237246)
 
 @Composable
 internal fun Modifier.studioFeature(): Modifier {
     val shape = MaterialTheme.shapes.extraLarge
-    val container = if (LocalChromeDarkTheme.current) ChromeDarkColors.panel else MaterialTheme.colorScheme.surfaceContainerLow
-    return background(container, shape)
-        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+    val surface = background(MaterialTheme.colorScheme.surfaceContainerLow, shape)
+    return if (LocalChromeDarkTheme.current) surface
+    else surface.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
 }
 
 @Composable
 internal fun StudioCard(
     modifier: Modifier = Modifier,
     colors: CardColors = CardDefaults.cardColors(
-        containerColor = if (LocalChromeDarkTheme.current) ChromeDarkColors.panel else MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ),
-    border: BorderStroke? = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    border: BorderStroke? = if (LocalChromeDarkTheme.current) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(modifier = modifier, shape = MaterialTheme.shapes.large, colors = colors, border = border) {
-        if (LocalChromeDarkTheme.current) {
-            val scheme = MaterialTheme.colorScheme
-            val panelScheme = remember(scheme) { scheme.copy(error = ChromeDarkColors.errorOnPanel) }
-            MaterialTheme(colorScheme = panelScheme) { content() }
-        } else {
-            content()
-        }
-    }
+    Card(modifier = modifier, shape = MaterialTheme.shapes.large, colors = colors, border = border, content = content)
 }
 
 @Composable
 internal fun StudioEmblem(icon: ImageVector) {
     val shape = RoundedCornerShape(13.dp)
+    val chromeDark = LocalChromeDarkTheme.current
+    val colors = MaterialTheme.colorScheme
+    val background = if (chromeDark) ChromeDarkColors.emblem else colors.primaryContainer
+    val foreground = if (chromeDark) ChromeDarkColors.emblemInk else colors.onPrimaryContainer
     Box(
-        Modifier.size(42.dp).background(MaterialTheme.colorScheme.primaryContainer, shape),
+        Modifier.size(42.dp).background(background, shape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer,
+        Icon(icon, contentDescription = null, tint = foreground,
             modifier = Modifier.size(21.dp))
     }
 }
@@ -123,7 +109,7 @@ internal fun StudioTopBar(
             Column {
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = if (chromeDark) ChromeDarkColors.muted else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },

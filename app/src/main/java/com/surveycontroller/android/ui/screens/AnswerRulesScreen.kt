@@ -35,7 +35,6 @@ import com.surveycontroller.android.ui.MainViewModel
 import com.surveycontroller.android.ui.components.StudioCard
 import com.surveycontroller.android.ui.components.StudioTopBar
 import com.surveycontroller.android.ui.components.StudioHeading
-import com.surveycontroller.android.ui.components.studioActionColors
 
 /**
  * 条件规则可视化编辑器：当条件题选中/未选某些选项时，约束目标题必选/禁选某些选项。
@@ -132,7 +131,6 @@ private fun RuleBuilder(questions: List<QuestionConfigDraft>, onAdd: (Map<String
             OptionChips(targetQ, targetOpts)
 
             Button(
-                colors = studioActionColors(),
                 onClick = {
                     val rule = mutableMapOf<String, Any?>(
                             "condition_question_num" to conditionQ.num,

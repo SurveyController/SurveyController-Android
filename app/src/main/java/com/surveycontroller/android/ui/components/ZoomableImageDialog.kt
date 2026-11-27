@@ -136,7 +136,6 @@ fun ZoomableImageDialog(drawableRes: Int, fileName: String, onDismiss: () -> Uni
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Button(
-                        colors = studioActionColors(),
                         onClick = {
                             if (!saving) {
                                 saving = true

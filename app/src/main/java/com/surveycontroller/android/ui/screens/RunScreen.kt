@@ -42,8 +42,6 @@ import com.surveycontroller.android.ui.components.StudioCard
 import com.surveycontroller.android.ui.components.studioFeature
 import com.surveycontroller.android.ui.components.StudioTopBar
 import com.surveycontroller.android.ui.components.studioSuccessColor
-import com.surveycontroller.android.ui.theme.ChromeDarkColors
-import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,10 +88,9 @@ private fun OverviewCard(p: com.surveycontroller.android.core.engine.RunProgress
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Stat("成功", p.success.toString(), Modifier.weight(1f), valueColor = studioSuccessColor())
-            val errorText = if (LocalChromeDarkTheme.current) ChromeDarkColors.errorOnPanel else MaterialTheme.colorScheme.error
             Stat(
                 "失败", p.fail.toString(), Modifier.weight(1f),
-                valueColor = if (p.fail > 0) errorText else MaterialTheme.colorScheme.onSurface,
+                valueColor = if (p.fail > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             )
             Stat("目标", p.target.toString(), Modifier.weight(1f))
         }

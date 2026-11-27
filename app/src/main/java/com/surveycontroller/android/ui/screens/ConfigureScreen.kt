@@ -87,7 +87,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
 import kotlin.math.roundToInt
-import com.surveycontroller.android.ui.components.studioActionColors
 import com.surveycontroller.android.ui.theme.ChromeDarkColors
 import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
 import com.surveycontroller.android.ui.components.studioSuccessColor
@@ -149,7 +148,6 @@ fun ConfigureScreen(viewModel: MainViewModel, onBack: () -> Unit, onRun: () -> U
                                 shape = MaterialTheme.shapes.medium,
                             ) { Text("离线试跑") }
                             Button(
-                                colors = studioActionColors(),
                                 onClick = if (section == ConfigSection.CHECK) onRun else { { section = ConfigSection.CHECK } },
                                 modifier = Modifier.weight(1.3f).height(48.dp),
                                 shape = MaterialTheme.shapes.medium,
