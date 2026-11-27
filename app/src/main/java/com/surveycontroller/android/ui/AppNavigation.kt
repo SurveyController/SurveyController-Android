@@ -36,6 +36,8 @@ import com.surveycontroller.android.ui.screens.HomeScreen
 import com.surveycontroller.android.ui.screens.IpUsageScreen
 import com.surveycontroller.android.ui.screens.RunScreen
 import com.surveycontroller.android.ui.screens.ScanScreen
+import com.surveycontroller.android.ui.theme.ChromeDarkColors
+import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
 import com.surveycontroller.android.ui.screens.SettingsScreen
 
 object Routes {
@@ -63,6 +65,10 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel(), navigationLabelVis
     val currentRoute = backStack?.destination?.route
     val showBottomBar = currentRoute in tabs.map { it.route }
 
+    val chromeDark = LocalChromeDarkTheme.current
+    val navigationSurface = if (chromeDark) ChromeDarkColors.toolbar else MaterialTheme.colorScheme.surfaceContainerHigh
+    val inactiveNavigation = if (chromeDark) ChromeDarkColors.muted else MaterialTheme.colorScheme.onSurfaceVariant
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = MaterialTheme.colorScheme.background,
@@ -72,11 +78,11 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel(), navigationLabelVis
                     Surface(
                         modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 7.dp),
                         shape = RoundedCornerShape(25.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = navigationSurface,
                     ) {
                         NavigationBar(
                             modifier = Modifier.height(66.dp),
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            containerColor = navigationSurface,
                             windowInsets = WindowInsets(0, 0, 0, 0),
                         ) {
                             tabs.forEach { tab ->
@@ -98,6 +104,8 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel(), navigationLabelVis
                                         indicatorColor = MaterialTheme.colorScheme.primaryContainer,
                                         selectedIconColor = MaterialTheme.colorScheme.primary,
                                         selectedTextColor = MaterialTheme.colorScheme.primary,
+                                        unselectedIconColor = inactiveNavigation,
+                                        unselectedTextColor = inactiveNavigation,
                                     ),
                                 )
                             }

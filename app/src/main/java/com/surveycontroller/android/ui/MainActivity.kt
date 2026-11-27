@@ -7,9 +7,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.surveycontroller.android.core.engine.RunStatus
 import com.surveycontroller.android.data.SettingsStore
@@ -46,6 +48,12 @@ class MainActivity : ComponentActivity() {
                 SettingsStore.ThemeMode.LIGHT -> false
                 SettingsStore.ThemeMode.DARK -> true
                 SettingsStore.ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+            SideEffect {
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
             }
             SurveyControllerTheme(darkTheme = darkTheme, dynamicColor = settings.dynamicColor) {
                 AppNavigation(viewModel = viewModel, navigationLabelVisible = settings.navigationLabelVisible)

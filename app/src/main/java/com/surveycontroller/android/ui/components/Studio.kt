@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.surveycontroller.android.ui.theme.ChromeDarkColors
+import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
 
 internal val distributionColors = listOf(
     Color(0xFF4D68C9), Color(0xFF8795C2), Color(0xFFB08C80), Color(0xFF748392),
@@ -39,17 +41,24 @@ internal val distributionColors = listOf(
 )
 
 @Composable
+internal fun studioSuccessColor(): Color =
+    if (LocalChromeDarkTheme.current) ChromeDarkColors.success else Color(0xFF237246)
+
+@Composable
 internal fun Modifier.studioFeature(): Modifier {
     val shape = MaterialTheme.shapes.extraLarge
-    return background(MaterialTheme.colorScheme.surfaceContainerLow, shape)
-        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+    val surface = background(MaterialTheme.colorScheme.surfaceContainerLow, shape)
+    return if (LocalChromeDarkTheme.current) surface
+    else surface.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
 }
 
 @Composable
 internal fun StudioCard(
     modifier: Modifier = Modifier,
-    colors: CardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    border: BorderStroke? = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    colors: CardColors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ),
+    border: BorderStroke? = if (LocalChromeDarkTheme.current) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(modifier = modifier, shape = MaterialTheme.shapes.large, colors = colors, border = border, content = content)
@@ -58,11 +67,15 @@ internal fun StudioCard(
 @Composable
 internal fun StudioEmblem(icon: ImageVector) {
     val shape = RoundedCornerShape(13.dp)
+    val chromeDark = LocalChromeDarkTheme.current
+    val colors = MaterialTheme.colorScheme
+    val background = if (chromeDark) ChromeDarkColors.emblem else colors.primaryContainer
+    val foreground = if (chromeDark) ChromeDarkColors.emblemInk else colors.onPrimaryContainer
     Box(
-        Modifier.size(42.dp).background(MaterialTheme.colorScheme.primaryContainer, shape),
+        Modifier.size(42.dp).background(background, shape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer,
+        Icon(icon, contentDescription = null, tint = foreground,
             modifier = Modifier.size(21.dp))
     }
 }
@@ -90,12 +103,14 @@ internal fun StudioTopBar(
     subtitle: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val chromeDark = LocalChromeDarkTheme.current
     TopAppBar(
         title = {
             Column {
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },
         actions = actions,
@@ -104,6 +119,8 @@ internal fun StudioTopBar(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = if (chromeDark) ChromeDarkColors.toolbar else MaterialTheme.colorScheme.background,
+        ),
     )
 }
