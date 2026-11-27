@@ -135,12 +135,6 @@ fun RatioSliders(
 /** 分布预览条：按占比拼接彩色段。 */
 @Composable
 private fun DistributionBar(values: List<Int>) {
-    val palette = remember {
-        listOf(
-            Color(0xFF0067C0), Color(0xFF2E9E5B), Color(0xFFE8833A), Color(0xFF9B59B6),
-            Color(0xFFE74C3C), Color(0xFF16A085), Color(0xFFF1C40F), Color(0xFF34495E),
-        )
-    }
     Row(
         Modifier.fillMaxWidth().height(10.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(5.dp)),
     ) {
@@ -148,7 +142,7 @@ private fun DistributionBar(values: List<Int>) {
             if (v > 0) {
                 Box(
                     Modifier.weight(v.toFloat()).fillMaxHeight()
-                        .background(palette[i % palette.size]),
+                        .background(distributionColors[i % distributionColors.size]),
                 )
             }
         }

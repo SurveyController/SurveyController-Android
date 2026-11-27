@@ -1,12 +1,19 @@
 package com.surveycontroller.android.ui
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -14,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -47,7 +55,7 @@ private data class TabItem(val route: String, val label: String, val icon: andro
 fun AppNavigation(viewModel: MainViewModel = hiltViewModel(), navigationLabelVisible: Boolean = true) {
     val navController = rememberNavController()
     val tabs = listOf(
-        TabItem(Routes.HOME, "工作台", Icons.Filled.Home),
+        TabItem(Routes.HOME, "工作台", Icons.Filled.Dashboard),
         TabItem(Routes.SETTINGS, "设置", Icons.Filled.Settings),
         TabItem(Routes.ABOUT, "关于", Icons.Filled.Info),
     )
@@ -57,23 +65,43 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel(), navigationLabelVis
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
-                    tabs.forEach { tab ->
-                        val selected = backStack?.destination?.hierarchy?.any { it.route == tab.route } == true
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = if (navigationLabelVisible) ({ Text(tab.label) }) else null,
-                        )
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 7.dp),
+                        shape = RoundedCornerShape(25.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        NavigationBar(
+                            modifier = Modifier.height(66.dp),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            windowInsets = WindowInsets(0, 0, 0, 0),
+                        ) {
+                            tabs.forEach { tab ->
+                                val selected = backStack?.destination?.hierarchy?.any { it.route == tab.route } == true
+                                NavigationBarItem(
+                                    selected = selected,
+                                    onClick = {
+                                        navController.navigate(tab.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                    label = if (navigationLabelVisible) ({
+                                        Text(tab.label, style = MaterialTheme.typography.labelMedium)
+                                    }) else null,
+                                    colors = NavigationBarItemDefaults.colors(
+                                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -116,7 +144,7 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel(), navigationLabelVis
                 )
             }
             composable(Routes.ABOUT) { AboutScreen(viewModel = viewModel) }
-            composable(Routes.IP_USAGE) { IpUsageScreen(viewModel = viewModel) }
+            composable(Routes.IP_USAGE) { IpUsageScreen(viewModel = viewModel, onBack = { navController.popBackStack() }) }
             composable(Routes.SCAN) {
                 ScanScreen(
                     onResult = { url ->

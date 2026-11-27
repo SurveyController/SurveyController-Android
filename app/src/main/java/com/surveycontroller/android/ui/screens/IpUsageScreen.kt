@@ -10,12 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -29,17 +27,20 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.surveycontroller.android.core.network.MonotoneCubic
 import com.surveycontroller.android.ui.MainViewModel
+import com.surveycontroller.android.ui.components.StudioCard
+import com.surveycontroller.android.ui.components.studioFeature
+import com.surveycontroller.android.ui.components.StudioTopBar
+import androidx.compose.material3.Scaffold
 
 /**
  * IP 使用记录页。1:1 对齐桌面端 ip_usage_page：每日提取 IP 数折线图 + IP 池剩余数量。
  * 折线采用单调三次插值平滑（MonotoneCubic），进入页面自动加载并触发彩蛋福利领取。
  */
 @Composable
-fun IpUsageScreen(viewModel: MainViewModel) {
+fun IpUsageScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val state by viewModel.ipUsage.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -47,67 +48,69 @@ fun IpUsageScreen(viewModel: MainViewModel) {
         viewModel.claimEasterEggBonus()
     }
 
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("IP 使用记录", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            OutlinedButton(onClick = viewModel::loadIpUsage, enabled = !state.loading) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("  刷新")
-            }
-        }
-
-        // IP 池剩余
-        Card(Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            StudioTopBar("IP 使用记录", onBack, actions = {
+                IconButton(onClick = viewModel::loadIpUsage, enabled = !state.loading) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                }
+            })
+        },
+    ) { inner ->
+        Column(
+            Modifier.fillMaxSize().padding(inner).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().studioFeature().padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column(Modifier.weight(1f)) {
-                    Text("IP 池剩余数量", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("IP 池剩余", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
                     val remaining = state.summary?.remainingIp
                     Text(
                         when {
-                            state.loading && state.summary == null -> "同步中…"
+                            state.loading && state.summary == null -> "同步中"
                             remaining != null -> remaining.toString()
                             else -> "未知"
                         },
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.displaySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                if (state.loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                if (state.loading) CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
             }
-        }
 
-        state.bonusMessage?.let {
-            Card(Modifier.fillMaxWidth()) {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(16.dp))
+            state.bonusMessage?.let {
+                StudioCard(Modifier.fillMaxWidth()) {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(16.dp))
+                }
             }
-        }
 
-        // 折线图卡片
-        Card(Modifier.fillMaxWidth().weight(1f)) {
-            Column(Modifier.fillMaxSize().padding(16.dp)) {
-                Text("每日提取 IP 数", style = MaterialTheme.typography.titleMedium)
-                val records = state.summary?.records.orEmpty()
-                when {
-                    state.error != null -> CenterHint("加载失败：${state.error}")
-                    state.loading && records.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                    records.isEmpty() -> CenterHint("暂无数据")
-                    else -> {
-                        UsageLineChart(
-                            values = records.map { it.total },
-                            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 12.dp),
-                        )
-                        Text(
-                            "${records.first().label} ~ ${records.last().label}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
+            // 折线图卡片
+            StudioCard(Modifier.fillMaxWidth().weight(1f)) {
+                Column(Modifier.fillMaxSize().padding(16.dp)) {
+                    Text("每日提取 IP 数", style = MaterialTheme.typography.titleMedium)
+                    val records = state.summary?.records.orEmpty()
+                    when {
+                        state.error != null -> CenterHint("加载失败：${state.error}")
+                        state.loading && records.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                        records.isEmpty() -> CenterHint("暂无数据")
+                        else -> {
+                            UsageLineChart(
+                                values = records.map { it.total },
+                                modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 12.dp),
+                            )
+                            Text(
+                                "${records.first().label} ~ ${records.last().label}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
                     }
                 }
             }

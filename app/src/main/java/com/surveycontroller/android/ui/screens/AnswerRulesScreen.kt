@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -21,7 +19,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -35,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import com.surveycontroller.android.core.model.QuestionEntryType
 import com.surveycontroller.android.data.QuestionConfigDraft
 import com.surveycontroller.android.ui.MainViewModel
+import com.surveycontroller.android.ui.components.StudioCard
+import com.surveycontroller.android.ui.components.StudioTopBar
+import com.surveycontroller.android.ui.components.StudioHeading
 
 /**
  * 条件规则可视化编辑器：当条件题选中/未选某些选项时，约束目标题必选/禁选某些选项。
@@ -46,14 +46,8 @@ fun AnswerRulesScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val state by viewModel.workbench.collectAsState()
     val draft = state.draft
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("条件规则") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
-                },
-            )
-        },
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { StudioTopBar("条件规则", onBack, draft?.definition?.title) },
     ) { inner ->
         if (draft == null) {
             Text("请先解析问卷", modifier = Modifier.padding(inner).padding(16.dp))
@@ -71,8 +65,9 @@ fun AnswerRulesScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item { StudioHeading("规则编辑器", "按条件题的答案限制后续题目。") }
             item { RuleBuilder(eligible, onAdd = viewModel::addAnswerRule) }
-            item { Text("已配置规则（${draft.answerRules.size}）", style = MaterialTheme.typography.titleMedium) }
+            item { Text("已配置 · ${draft.answerRules.size} 条", style = MaterialTheme.typography.titleLarge) }
             items(draft.answerRules) { rule ->
                 val index = draft.answerRules.indexOf(rule)
                 RuleCard(rule, eligible) { viewModel.removeAnswerRule(index) }
@@ -85,7 +80,7 @@ fun AnswerRulesScreen(viewModel: MainViewModel, onBack: () -> Unit) {
 @Composable
 private fun RuleBuilder(questions: List<QuestionConfigDraft>, onAdd: (Map<String, Any?>) -> Unit) {
     if (questions.size < 2) {
-        Card { Text("可作为条件/目标的题目不足 2 道", Modifier.padding(16.dp)) }
+        StudioCard { Text("可作为条件/目标的题目不足 2 道", Modifier.padding(16.dp)) }
         return
     }
     var conditionQ by remember { mutableStateOf(questions.first()) }
@@ -97,7 +92,7 @@ private fun RuleBuilder(questions: List<QuestionConfigDraft>, onAdd: (Map<String
     var targetRowIndex by remember { mutableStateOf<Int?>(defaultRowIndex(questions.last())) }
     val targetOpts = remember { mutableStateListOf<Int>() }
 
-    Card(Modifier.fillMaxWidth()) {
+    StudioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("新增规则", style = MaterialTheme.typography.titleMedium)
 
@@ -229,7 +224,7 @@ private fun RuleCard(rule: Map<String, Any?>, questions: List<QuestionConfigDraf
     val actMode = if (rule["action_mode"] == "must_not_select") "禁选" else "必选"
     val condRow = rowLabel(rule["condition_question_num"], rule["condition_row_index"])
     val targetRow = rowLabel(rule["target_question_num"], rule["target_row_index"])
-    Card(Modifier.fillMaxWidth()) {
+    StudioCard(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(
                 "当 ${qTitle(rule["condition_question_num"])}$condRow $condMode 第[${opts("condition_option_indices")}]项 → ${qTitle(rule["target_question_num"])}$targetRow $actMode 第[${opts("target_option_indices")}]项",
