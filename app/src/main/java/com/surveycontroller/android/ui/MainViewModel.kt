@@ -5,8 +5,6 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.surveycontroller.android.core.backend.BackendClient
-import com.surveycontroller.android.core.backend.ContactClient
-import com.surveycontroller.android.core.backend.ContactMessageType
 import com.surveycontroller.android.core.backend.IpUsageSummary
 import com.surveycontroller.android.core.backend.RandomIpSession
 import com.surveycontroller.android.core.backend.backendErrorMessage
@@ -77,7 +75,6 @@ class MainViewModel @Inject constructor(
     private val registry: ProviderRegistry,
     private val engine: RunEngine,
     private val backend: BackendClient,
-    private val contactClient: ContactClient,
     private val recentStore: RecentSurveyStore,
     private val updateChecker: UpdateChecker,
     val settingsStore: SettingsStore,
@@ -629,7 +626,7 @@ class MainViewModel @Inject constructor(
                     aiSystemPrompt = ai.systemPrompt,
                 )
             }
-            _toolMessage.value = if (ai.isProviderMode) "已采用导入的自定义 AI 配置" else "已切换为导入配置中的免费 AI 模式"
+            _toolMessage.value = "已采用导入的自定义 AI 配置"
         }
     }
 
@@ -708,41 +705,6 @@ class MainViewModel @Inject constructor(
         _ipUsage.value = _ipUsage.value.copy(bonusMessage = null)
     }
 
-    // ===== 联系开发者 =====
-
-    data class ContactState(
-        val sending: Boolean = false,
-        val result: String? = null,
-        val success: Boolean = false,
-    )
-
-    private val _contact = MutableStateFlow(ContactState())
-    val contact: StateFlow<ContactState> = _contact.asStateFlow()
-
-    /** 提交反馈给开发者（对齐桌面端 ContactForm 发送）。 */
-    fun submitContact(type: ContactMessageType, message: String, email: String, issueTitle: String) {
-        if (_contact.value.sending) return
-        if (message.isBlank()) {
-            _contact.value = ContactState(result = "请输入消息内容", success = false)
-            return
-        }
-        _contact.value = ContactState(sending = true)
-        viewModelScope.launch {
-            runCatching { contactClient.submit(type, message.trim(), email.trim(), issueTitle.trim()) }
-                .onSuccess { ok ->
-                    _contact.value = ContactState(
-                        sending = false,
-                        success = ok,
-                        result = if (ok) "消息已发送，开发者会尽快回复" else "发送失败，请稍后重试",
-                    )
-                }
-                .onFailure { _contact.value = ContactState(sending = false, success = false, result = "发送失败：${it.message}") }
-        }
-    }
-
-    fun clearContactState() {
-        _contact.value = ContactState()
-    }
 }
 
 private fun Context.takePersistableReadPermissionSafely(uri: Uri) {

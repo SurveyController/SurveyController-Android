@@ -8,13 +8,14 @@ import kotlin.math.floor
 import kotlin.math.min
 import kotlin.random.Random
 
+internal const val OPTION_FILL_AI_TOKEN = "__AI_FILL__"
+
 /**
  * 平台无关的答案生成。复刻各 provider 的 answering_builders 共有选择逻辑。
  * 产出 AnswerAction（含 questionId），各 Provider 再按自身格式编码提交。
  */
 class SurveyAnswerBuilder(private val ctx: AnswerContext) {
     private companion object {
-        const val OPTION_FILL_AI_TOKEN = "__AI_FILL__"
         const val FREE_AI_TEXT_PREFIX = "__FREE_AI_TEXT__"
         const val FREE_AI_OPTION_FILL_PREFIX = "__FREE_AI_OPTION_FILL__"
     }
@@ -560,7 +561,8 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
         question: SurveyQuestionMeta,
         configQuestionNum: Int,
     ): String? {
-        val raw = entries?.getOrNull(optionIndex)
+        val candidates = ctx.config.optionFillCandidates[configQuestionNum]?.get(optionIndex)
+        val raw = if (candidates != null) candidates.randomOrNull() else entries?.getOrNull(optionIndex)
         val text = raw?.trim().orEmpty()
         if (text.isEmpty()) return defaultMissingOptionFill(question, optionIndex, null)
         if (text == OPTION_FILL_AI_TOKEN) return resolveAiOptionFill(question, configQuestionNum, optionIndex)

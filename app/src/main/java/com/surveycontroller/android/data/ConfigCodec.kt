@@ -38,7 +38,7 @@ object ConfigCodec {
     private val VALID_LOGIC_PARSE_STATUSES = setOf("complete", "none", "unknown")
     private val TERMINATE_JUMP_KEYWORDS = listOf("结束作答", "结束答题", "结束填写", "终止作答", "停止作答")
 
-    fun serialize(draft: SurveyConfigDraft): String {
+    fun serialize(draft: SurveyConfigDraft, includeSecrets: Boolean = false): String {
         val def = draft.definition
         val p = draft.params
         val root = JSONObject()
@@ -63,13 +63,13 @@ object ConfigCodec {
         root.put("reliability_mode_enabled", p.reliabilityModeEnabled)
         root.put("psycho_target_alpha", p.psychoTargetAlpha)
         root.put("pause_on_aliyun_captcha", p.pauseOnAliyunCaptcha)
-        root.put("ai_mode", p.aiMode)
+        root.put("ai_mode", "provider")
         val ai = draft.preserved.importedAiConfig
         // v5 用显式意图代替“有没有 ai_* 字段”的隐式判断
         root.put("ai_config_mode", if (ai.present) "override" else "inherit")
         if (ai.present) {
             root.put("ai_provider", ai.provider.ifBlank { "custom" })
-            root.put("ai_api_key", ai.apiKey)
+            if (includeSecrets && ai.apiKey.isNotEmpty()) root.put("ai_api_key", ai.apiKey)
             root.put("ai_base_url", ai.baseUrl)
             root.put("ai_api_protocol", ai.apiProtocol.ifBlank { "auto" })
             root.put("ai_model", ai.model)
@@ -290,7 +290,10 @@ object ConfigCodec {
         put("text_int_max", q.textIntMax)
         put("text_random_mode", desktopTextRandomMode(q))
         put("text_random_int_range", JSONArray().put(q.textIntMin).put(q.textIntMax))
-        put("option_fill_texts", JSONArray(q.optionFillTexts.map { it ?: JSONObject.NULL }))
+        val fillSize = maxOf(q.optionFillTexts.size, (q.optionFillCandidates.keys.maxOrNull() ?: -1) + 1)
+        put("option_fill_texts", JSONArray(List(fillSize) { index ->
+            q.optionFillCandidates[index]?.let { JSONArray(it) } ?: q.optionFillTexts.getOrNull(index) ?: JSONObject.NULL
+        }))
         put("fillable_option_indices", JSONArray(q.fillableOptionIndices))
         put("attached_option_selects", JSONArray(q.attachedOptionSelects.map { JSONObject(it) }))
         put("multi_text_blank_modes", JSONArray(desktopMultiTextBlankModes(q)))
@@ -382,7 +385,7 @@ object ConfigCodec {
             reliabilityModeEnabled = root.optBoolean("reliability_mode_enabled", true),
             psychoTargetAlpha = root.optDouble("psycho_target_alpha", 0.85),
             pauseOnAliyunCaptcha = root.optBoolean("pause_on_aliyun_captcha", true),
-            aiMode = root.optString("ai_mode", "free"),
+            aiMode = "provider",
         )
         val preserved = ConfigPreservedFields(
             dimensionGroups = normalizeDimensionGroups(root.optJSONArray("dimension_groups").toStringList()),
@@ -567,7 +570,26 @@ object ConfigCodec {
         val fillableIndices = e.optJSONArray("fillable_option_indices").toIntList()
             .ifEmpty { meta?.fillableOptions ?: emptyList() }
             .filter { it in 0 until optionCount }
-        val optionFillTexts = e.optJSONArray("option_fill_texts").toNullableStringList()
+        val rawFills = e.opt("option_fill_texts")
+        require(rawFills == null || rawFills == JSONObject.NULL || rawFills is JSONArray) {
+            "option_fill_texts 必须是按选项排列的数组"
+        }
+        val optionFillCandidates = mutableMapOf<Int, List<String>>()
+        val fills = e.optJSONArray("option_fill_texts")
+        val optionFillTexts = MutableList(fills?.length() ?: 0) { index ->
+            when (val value = fills?.opt(index)) {
+                null, JSONObject.NULL -> null
+                is String -> value
+                is JSONArray -> {
+                    optionFillCandidates[index] = List(value.length()) { candidate ->
+                        value.opt(candidate) as? String
+                            ?: throw IllegalArgumentException("option_fill_texts[$index] 仅接受文本候选")
+                    }
+                    null
+                }
+                else -> throw IllegalArgumentException("option_fill_texts[$index] 必须是字符串、字符串数组或 null")
+            }
+        }
             .padNullable(optionCount)
         val attachedSelects = e.optJSONArray("attached_option_selects").toMapList()
             .ifEmpty { meta?.attachedOptionSelects ?: emptyList() }
@@ -608,6 +630,7 @@ object ConfigCodec {
             textIntMax = textIntRange.second,
             fillableOptionIndices = fillableIndices,
             optionFillTexts = optionFillTexts,
+            optionFillCandidates = optionFillCandidates,
             attachedOptionSelects = attachedSelects,
             textInputLabels = meta?.textInputLabels ?: emptyList(),
             multiTextBlankModes = if (forcedTextCandidates != null) {
@@ -728,16 +751,6 @@ object ConfigCodec {
 
     private fun JSONArray?.toStringList(): List<String> =
         if (this == null) emptyList() else (0 until length()).map { optString(it) }
-
-    private fun JSONArray?.toNullableStringList(): MutableList<String?> =
-        if (this == null) {
-            mutableListOf()
-        } else {
-            (0 until length()).map { idx ->
-                val raw = opt(idx)
-                if (raw == null || raw == JSONObject.NULL) null else raw.toString()
-            }.toMutableList()
-        }
 
     private fun JSONArray?.toIntList(): List<Int> =
         if (this == null) emptyList() else (0 until length()).mapNotNull { idx ->
@@ -1135,10 +1148,10 @@ object ConfigCodec {
             "inherit" -> false
             else -> keys.any { has(it) }
         }
-        val mode = normalizeAiMode(optString("ai_mode", "free"))
+        val mode = optString("ai_mode", "provider").trim().lowercase()
         return ImportedAiConfig(
-            present = present,
-            mode = mode,
+            present = present && mode == "provider",
+            mode = "provider",
             provider = optString("ai_provider", "custom").ifBlank { "custom" },
             apiKey = optString("ai_api_key", ""),
             baseUrl = optString("ai_base_url", ""),
@@ -1146,11 +1159,6 @@ object ConfigCodec {
             model = optString("ai_model", ""),
             systemPrompt = optString("ai_system_prompt", ""),
         )
-    }
-
-    private fun normalizeAiMode(raw: String): String {
-        val value = raw.trim().lowercase()
-        return if (value in setOf("free", "provider")) value else "free"
     }
 
     private fun ensureSupportedConfigPayload(root: JSONObject) {

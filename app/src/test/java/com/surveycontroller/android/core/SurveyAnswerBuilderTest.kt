@@ -21,6 +21,24 @@ import kotlin.math.roundToInt
 class SurveyAnswerBuilderTest {
 
     @Test
+    fun samples_only_from_the_selected_options_candidates() = runBlocking {
+        val question = SurveyQuestionMeta(
+            num = 1, title = "测试题", typeCode = "3", options = 2,
+            optionTexts = listOf("A", "B"), fillableOptions = listOf(0, 1), forcedOptionIndex = 1,
+        )
+        val config = ExecutionConfig(
+            url = "https://www.wjx.cn/vm/demo.aspx",
+            singleProb = listOf(listOf(50.0, 50.0)),
+            questionConfigIndexMap = mapOf(1 to ("single" to 0)),
+            optionFillCandidates = mapOf(1 to mapOf(0 to listOf("未选"), 1 to listOf("甲", "乙"))),
+        )
+        val answer = SurveyAnswerBuilder(AnswerContext(config, ExecutionState(config))).buildAction(question)
+        val fill = answer?.optionFillTexts?.single()
+        assertEquals(1, fill?.first)
+        assertTrue(fill?.second in listOf("甲", "乙"))
+    }
+
+    @Test
     fun single_choice_generates_attached_select_choice_when_selected_option_has_child_select() = runBlocking {
         val question = SurveyQuestionMeta(
             num = 1,

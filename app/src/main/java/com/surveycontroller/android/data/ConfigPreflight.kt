@@ -4,6 +4,7 @@ import com.surveycontroller.android.core.model.QuestionEntryType
 import com.surveycontroller.android.core.model.SurveyQuestionMeta
 import com.surveycontroller.android.core.questions.AnswerRule
 import com.surveycontroller.android.core.questions.HttpLogicPlanner
+import com.surveycontroller.android.core.questions.OPTION_FILL_AI_TOKEN
 import com.surveycontroller.android.core.questions.TextValues
 import com.surveycontroller.android.core.reverse_fill.REVERSE_FILL_STATUS_REVERSE
 import com.surveycontroller.android.core.reverse_fill.ReverseFillSpec
@@ -139,6 +140,9 @@ object ConfigPreflight {
 
         validateAnswerRules(draft, metaByNum, errors)
 
+        if (usesAiText(draft) && !options.customAiEnabled) {
+            errors.add(Issue(Severity.ERROR, "AI 填空尚未配置", "请启用并配置自定义 AI，或调整使用 AI 的题目"))
+        }
         if (usesAiText(draft) && options.customAiEnabled) {
             validateCustomAiOptions(options, errors, warnings)
         }
@@ -449,7 +453,9 @@ object ConfigPreflight {
         val hasConfiguredFill = q.optionFillTexts.withIndex().any { (index, value) ->
             index in allowed && !value.isNullOrBlank()
         }
-        if (!hasConfiguredFill) return
+        if (!hasConfiguredFill && q.optionFillCandidates.none { (index, choices) ->
+            index in allowed && choices.any { it.isNotBlank() }
+        }) return
         val label = "第 ${displayNum(meta)} 题含选项填空"
         warnings.add(
             Issue(
@@ -931,7 +937,11 @@ object ConfigPreflight {
     }
 
     private fun usesAiText(draft: SurveyConfigDraft): Boolean =
-        draft.questions.any { q -> q.useAiText || q.multiTextBlankAiFlags.any { it } }
+        draft.questions.any { question ->
+            question.useAiText || question.multiTextBlankAiFlags.any { it } ||
+                question.optionFillTexts.any { it?.trim() == OPTION_FILL_AI_TOKEN } ||
+                question.optionFillCandidates.values.flatten().any { it.trim() == OPTION_FILL_AI_TOKEN }
+        }
 
     private fun countPositive(weights: Iterable<Double>): Int =
         weights.count { it.isFinite() && it > 0.0 }

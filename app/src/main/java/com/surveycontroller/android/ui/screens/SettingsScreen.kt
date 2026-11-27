@@ -140,11 +140,7 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
                     Column(Modifier.weight(1f)) {
                         Text("已导入桌面 AI 配置", style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            if (importedAi.isProviderMode) {
-                                "自定义 API · ${importedAi.provider.ifBlank { "provider" }} · ${importedAi.model.ifBlank { "未指定模型" }}"
-                            } else {
-                                "免费 AI 模式"
-                            },
+                            "自定义 API · ${importedAi.provider.ifBlank { "provider" }} · ${importedAi.model.ifBlank { "未指定模型" }}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -152,9 +148,9 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
                     OutlinedButton(onClick = viewModel::applyImportedAiConfig) { Text("采用") }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!s.aiEnabled, { set { it.copy(aiEnabled = false) } }, { Text("免费 AI（后端）") })
-                FilterChip(s.aiEnabled, { set { it.copy(aiEnabled = true) } }, { Text("自定义 API") })
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("启用自定义 AI", modifier = Modifier.weight(1f))
+                Switch(checked = s.aiEnabled, onCheckedChange = { enabled -> set { it.copy(aiEnabled = enabled) } })
             }
             if (s.aiEnabled) {
                 OutlinedTextField(s.aiBaseUrl, { v -> set { it.copy(aiBaseUrl = v) } }, label = { Text("API Base URL") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
@@ -168,8 +164,6 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
                     AiProtocolDropdown(s.aiApiProtocol) { v -> set { it.copy(aiApiProtocol = v) } }
                 }
                 OutlinedTextField(s.aiSystemPrompt, { v -> set { it.copy(aiSystemPrompt = v) } }, label = { Text("系统提示词（可选）") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-            } else {
-                Text("免费 AI 由项目后端提供，可用性以服务端为准；首次使用会自动尝试获取账号身份。", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
             }
         }
 

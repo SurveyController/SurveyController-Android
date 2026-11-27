@@ -58,7 +58,6 @@ fun AboutScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val update by viewModel.update.collectAsState()
     val checking by viewModel.checkingUpdate.collectAsState()
-    var showContact by remember { mutableStateOf(false) }
     var showTerms by remember { mutableStateOf(false) }
     // 当前放大查看的图片：null=不显示，Pair(drawableRes, fileName)
     var zoomImage by remember { mutableStateOf<Pair<Int, String>?>(null) }
@@ -129,7 +128,7 @@ fun AboutScreen(viewModel: MainViewModel) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Text("社区", style = MaterialTheme.typography.titleMedium)
-                Text("加入交流群获取最新版本、反馈问题、交流经验；也可以直接联系开发者或参与项目贡献。",
+                Text("加入交流群获取最新版本、反馈问题和交流经验。",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                 Image(
                     painter = painterResource(R.drawable.community_qr),
@@ -143,7 +142,6 @@ fun AboutScreen(viewModel: MainViewModel) {
                 )
                 Text("扫码加入 QQ 交流群（点击放大）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.CenterHorizontally))
                 Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { showContact = true }) { Text("联系开发者") }
                     OutlinedButton(onClick = { open(repoUrl) }) { Text("参与贡献") }
                 }
             }
@@ -215,7 +213,6 @@ fun AboutScreen(viewModel: MainViewModel) {
         )
     }
 
-    if (showContact) ContactDialog(viewModel = viewModel, onDismiss = { showContact = false })
     if (showTerms) TermsDialog(onDismiss = { showTerms = false })
     zoomImage?.let { (res, name) ->
         ZoomableImageDialog(drawableRes = res, fileName = name, onDismiss = { zoomImage = null })

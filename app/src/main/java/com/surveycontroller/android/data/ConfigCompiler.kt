@@ -58,7 +58,7 @@ object ConfigCompiler {
                 systemPrompt = imported.systemPrompt,
             )
         }
-        return draft.params.copy(aiMode = "free") to local.copy(enabled = false, apiProtocol = normalizeAiApiProtocol(local.apiProtocol))
+        return draft.params.copy(aiMode = "provider") to local.copy(enabled = false, apiProtocol = normalizeAiApiProtocol(local.apiProtocol))
     }
 
     private fun normalizeAiApiProtocol(raw: String?): String =
@@ -409,6 +409,13 @@ object ConfigCompiler {
             singleAttachedOptionSelects = singleAttachedOptionSelects,
             droplistOptionFillTexts = droplistOptionFillTexts,
             multipleOptionFillTexts = multipleOptionFillTexts,
+            optionFillCandidates = draft.questions.mapNotNull { question ->
+                val options = question.optionFillCandidates
+                    .filterKeys { it in question.fillableOptionIndices }
+                    .mapValues { (_, choices) -> choices.map(String::trim).filter(String::isNotEmpty) }
+                    .filterValues { it.isNotEmpty() }
+                options.takeIf { it.isNotEmpty() }?.let { question.num to it }
+            }.toMap(),
             multipleAttachedOptionSelects = multipleAttachedOptionSelects,
             questionConfigIndexMap = configIndexMap,
             providerQuestionConfigIndexMap = providerConfigIndexMap,

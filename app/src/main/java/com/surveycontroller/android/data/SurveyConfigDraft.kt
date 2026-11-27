@@ -57,6 +57,7 @@ data class QuestionConfigDraft(
     // 占比滑块中被锁定的选项（拖动其他项时保持不变）；纯 UI 辅助，不影响提交
     val lockedOptions: Set<Int> = emptySet(),
     val questionId: String = "",
+    val optionFillCandidates: Map<Int, List<String>> = emptyMap(),
 )
 
 /**
@@ -82,12 +83,12 @@ data class RunParamsDraft(
     val reliabilityModeEnabled: Boolean = true,
     val psychoTargetAlpha: Double = 0.85,
     val pauseOnAliyunCaptcha: Boolean = true,
-    val aiMode: String = "free",
+    val aiMode: String = "provider",
 )
 
 data class ImportedAiConfig(
     val present: Boolean = false,
-    val mode: String = "free",
+    val mode: String = "provider",
     val provider: String = "deepseek",
     val apiKey: String = "",
     val baseUrl: String = "",
