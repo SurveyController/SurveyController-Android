@@ -41,32 +41,36 @@ object HttpLogicPlanner {
     }
 
     /** 返回非空字符串表示该问卷逻辑无法被纯 HTTP 安全执行（原版会回退浏览器，移动端直接报错）。 */
-    fun fallbackReason(questions: List<SurveyQuestionMeta>): String {
+    fun fallbackReason(questions: List<SurveyQuestionMeta>): String = fallbackIssue(questions)?.message.orEmpty()
+
+    internal data class LogicIssue(val questionNumber: Int, val message: String)
+
+    internal fun fallbackIssue(questions: List<SurveyQuestionMeta>): LogicIssue? {
         val ordered = ordered(questions)
         val maxNum = ordered.maxOfOrNull { it.num } ?: 0
         for (q in ordered) {
             if (q.num <= 0 || !questionHasLogic(q)) continue
-            if (!logicStatusCompleteEnough(q)) return "第${q.num}题逻辑规则未完整解析"
+            if (!logicStatusCompleteEnough(q)) return LogicIssue(q.num, "第${q.num}题逻辑规则未完整解析")
             for (cond in q.displayConditions) {
                 val src = cond.conditionQuestionNum
                 val mode = cond.conditionMode.trim().ifEmpty { "selected" }
-                if (src <= 0) return "第${q.num}题显隐条件缺少来源题号"
-                if (src >= q.num) return "第${q.num}题显隐条件依赖未来题目"
-                if (mode !in SUPPORTED_CONDITION_MODES) return "第${q.num}题显隐条件模式不支持：$mode"
+                if (src <= 0) return LogicIssue(q.num, "第${q.num}题显隐条件缺少来源题号")
+                if (src >= q.num) return LogicIssue(q.num, "第${q.num}题显隐条件依赖未来题目")
+                if (mode !in SUPPORTED_CONDITION_MODES) return LogicIssue(q.num, "第${q.num}题显隐条件模式不支持：$mode")
             }
             for (target in q.controlsDisplayTargets) {
                 val mode = target.conditionMode.trim().ifEmpty { "selected" }
-                if (target.targetQuestionNum <= q.num) return "第${q.num}题控制显示规则存在回跳"
-                if (mode !in SUPPORTED_CONDITION_MODES) return "第${q.num}题控制显示模式不支持：$mode"
+                if (target.targetQuestionNum <= q.num) return LogicIssue(q.num, "第${q.num}题控制显示规则存在回跳")
+                if (mode !in SUPPORTED_CONDITION_MODES) return LogicIssue(q.num, "第${q.num}题控制显示模式不支持：$mode")
             }
             for (rule in q.jumpRules) {
                 if (ruleTerminates(rule)) continue
                 val target = rule.targetQuestion ?: 0
-                if (target <= q.num) return "第${q.num}题跳题目标回跳到已过题目"
-                if (maxNum > 0 && target > maxNum + 1) return "第${q.num}题跳题目标超出问卷范围"
+                if (target <= q.num) return LogicIssue(q.num, "第${q.num}题跳题目标回跳到已过题目")
+                if (maxNum > 0 && target > maxNum + 1) return LogicIssue(q.num, "第${q.num}题跳题目标超出问卷范围")
             }
         }
-        return ""
+        return null
     }
 
     private fun actionSelectedIndices(action: AnswerAction): Set<Int> =

@@ -29,36 +29,40 @@ object RandomText {
     private const val idCardChecksumChars = "10X98765432"
     private val fallbackAreaCodes = listOf("110100", "310100", "440100", "330100", "510100")
 
-    fun randomChineseName(gender: String? = null): String {
-        val surname = surnames.random()
-        val len = if (Random.nextDouble() < 0.65) 1 else 2
+    fun randomChineseName(gender: String? = null, random: Random = Random.Default): String {
+        val surname = surnames.random(random)
+        val len = if (random.nextDouble() < 0.65) 1 else 2
         val pool = when (gender) {
             "男" -> maleGiven + neutralGiven
             "女" -> femaleGiven + neutralGiven
             else -> maleGiven + femaleGiven + neutralGiven
         }
-        val given = buildString { repeat(len) { append(pool.random()) } }
+        val given = buildString { repeat(len) { append(pool.random(random)) } }
         return "$surname$given"
     }
 
-    fun randomMobile(): String {
-        val tail = buildString { repeat(8) { append(Random.nextInt(0, 10)) } }
-        return mobilePrefixes.random() + tail
+    fun randomMobile(random: Random = Random.Default): String {
+        val tail = buildString { repeat(8) { append(random.nextInt(0, 10)) } }
+        return mobilePrefixes.random(random) + tail
     }
 
-    fun randomIdCard(gender: String? = null): String {
-        val area = fallbackAreaCodes.random()
-        val age = Random.nextInt(18, 61)
-        val birthYear = LocalDate.now().year - age
+    fun randomIdCard(
+        gender: String? = null,
+        random: Random = Random.Default,
+        referenceYear: Int? = null,
+    ): String {
+        val area = fallbackAreaCodes.random(random)
+        val age = random.nextInt(18, 61)
+        val birthYear = (referenceYear ?: LocalDate.now().year) - age
         val start = LocalDate.of(birthYear, 1, 1)
         val end = LocalDate.of(birthYear, 12, 31)
         val days = (start.until(end).days + (end.dayOfYear - start.dayOfYear)).coerceAtLeast(0)
-        val birth = start.plusDays(Random.nextLong(0, (end.toEpochDay() - start.toEpochDay() + 1)))
-        val seqPrefix = Random.nextInt(0, 100)
+        val birth = start.plusDays(random.nextLong(0, (end.toEpochDay() - start.toEpochDay() + 1)))
+        val seqPrefix = random.nextInt(0, 100)
         val genderDigit = when (gender) {
-            "男" -> listOf(1, 3, 5, 7, 9).random()
-            "女" -> listOf(0, 2, 4, 6, 8).random()
-            else -> Random.nextInt(0, 10)
+            "男" -> listOf(1, 3, 5, 7, 9).random(random)
+            "女" -> listOf(0, 2, 4, 6, 8).random(random)
+            else -> random.nextInt(0, 10)
         }
         val first17 = "%s%04d%02d%02d%02d%d".format(
             area, birth.year, birth.monthValue, birth.dayOfMonth, seqPrefix, genderDigit,
@@ -72,9 +76,9 @@ object RandomText {
         return idCardChecksumChars[total % 11]
     }
 
-    fun randomGenericText(): String {
+    fun randomGenericText(random: Random = Random.Default): String {
         val samples = listOf("已填写", "同上", "无", "OK", "收到", "确认", "正常", "通过", "测试数据", "自动填写")
-        return samples.random() + Random.nextInt(10, 1000)
+        return samples.random(random) + random.nextInt(10, 1000)
     }
 
     fun parseRandomIntToken(token: String?): Pair<Int, Int>? {
@@ -89,15 +93,20 @@ object RandomText {
     }
 
     /** 解析动态文本令牌。复刻 resolve_dynamic_text_token。 */
-    fun resolveDynamicToken(token: String?, gender: String? = null): String {
+    fun resolveDynamicToken(
+        token: String?,
+        gender: String? = null,
+        random: Random = Random.Default,
+        referenceYear: Int? = null,
+    ): String {
         if (token == null) return DEFAULT_FILL_TEXT
         val text = token.trim()
-        parseRandomIntToken(text)?.let { (lo, hi) -> return Random.nextInt(lo, hi + 1).toString() }
+        parseRandomIntToken(text)?.let { (lo, hi) -> return random.nextInt(lo, hi + 1).toString() }
         return when (text) {
-            "__RANDOM_NAME__" -> randomChineseName(gender)
-            "__RANDOM_MOBILE__" -> randomMobile()
-            "__RANDOM_ID_CARD__" -> randomIdCard(gender)
-            "__RANDOM_TEXT__" -> randomGenericText()
+            "__RANDOM_NAME__" -> randomChineseName(gender, random)
+            "__RANDOM_MOBILE__" -> randomMobile(random)
+            "__RANDOM_ID_CARD__" -> randomIdCard(gender, random, referenceYear)
+            "__RANDOM_TEXT__" -> randomGenericText(random)
             else -> text.ifEmpty { DEFAULT_FILL_TEXT }
         }
     }

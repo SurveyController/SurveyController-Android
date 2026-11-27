@@ -68,9 +68,9 @@ data class Persona(
     }
 
     companion object {
-        private fun weightedChoice(options: List<String>, weights: List<Int>): String {
+        private fun weightedChoice(options: List<String>, weights: List<Int>, random: Random): String {
             val total = weights.sum()
-            var pivot = Random.nextInt(total)
+            var pivot = random.nextInt(total)
             for (i in options.indices) {
                 pivot -= weights[i]
                 if (pivot < 0) return options[i]
@@ -79,46 +79,46 @@ data class Persona(
         }
 
         /** 随机生成逻辑自洽的画像。复刻 generate_persona。 */
-        fun generate(): Persona {
-            val gender = if (Random.nextBoolean()) "男" else "女"
-            val ageGroup = weightedChoice(listOf("18-25", "26-35", "36-45", "46-60"), listOf(35, 35, 20, 10))
+        fun generate(random: Random = Random.Default): Persona {
+            val gender = if (random.nextBoolean()) "男" else "女"
+            val ageGroup = weightedChoice(listOf("18-25", "26-35", "36-45", "46-60"), listOf(35, 35, 20, 10), random)
             val education = when (ageGroup) {
-                "18-25" -> weightedChoice(listOf("高中及以下", "大专", "本科", "研究生及以上"), listOf(15, 20, 50, 15))
-                "26-35", "36-45" -> weightedChoice(listOf("高中及以下", "大专", "本科", "研究生及以上"), listOf(10, 20, 45, 25))
-                else -> weightedChoice(listOf("高中及以下", "大专", "本科", "研究生及以上"), listOf(25, 25, 35, 15))
+                "18-25" -> weightedChoice(listOf("高中及以下", "大专", "本科", "研究生及以上"), listOf(15, 20, 50, 15), random)
+                "26-35", "36-45" -> weightedChoice(listOf("高中及以下", "大专", "本科", "研究生及以上"), listOf(10, 20, 45, 25), random)
+                else -> weightedChoice(listOf("高中及以下", "大专", "本科", "研究生及以上"), listOf(25, 25, 35, 15), random)
             }
             val occupation = when (ageGroup) {
-                "18-25" -> weightedChoice(listOf("学生", "上班族", "自由职业"), listOf(55, 35, 10))
-                "46-60" -> weightedChoice(listOf("上班族", "自由职业", "退休"), listOf(50, 25, 25))
-                else -> weightedChoice(listOf("上班族", "自由职业"), listOf(75, 25))
+                "18-25" -> weightedChoice(listOf("学生", "上班族", "自由职业"), listOf(55, 35, 10), random)
+                "46-60" -> weightedChoice(listOf("上班族", "自由职业", "退休"), listOf(50, 25, 25), random)
+                else -> weightedChoice(listOf("上班族", "自由职业"), listOf(75, 25), random)
             }
             val income = when {
-                occupation == "学生" -> weightedChoice(listOf("低", "中"), listOf(85, 15))
-                occupation == "退休" -> weightedChoice(listOf("低", "中", "高"), listOf(30, 50, 20))
-                ageGroup == "36-45" || ageGroup == "46-60" -> weightedChoice(listOf("低", "中", "高"), listOf(15, 45, 40))
-                ageGroup == "26-35" -> weightedChoice(listOf("低", "中", "高"), listOf(20, 50, 30))
-                else -> weightedChoice(listOf("低", "中", "高"), listOf(40, 45, 15))
+                occupation == "学生" -> weightedChoice(listOf("低", "中"), listOf(85, 15), random)
+                occupation == "退休" -> weightedChoice(listOf("低", "中", "高"), listOf(30, 50, 20), random)
+                ageGroup == "36-45" || ageGroup == "46-60" -> weightedChoice(listOf("低", "中", "高"), listOf(15, 45, 40), random)
+                ageGroup == "26-35" -> weightedChoice(listOf("低", "中", "高"), listOf(20, 50, 30), random)
+                else -> weightedChoice(listOf("低", "中", "高"), listOf(40, 45, 15), random)
             }
             val marital = when (ageGroup) {
-                "18-25" -> weightedChoice(listOf("未婚", "已婚"), listOf(90, 10))
-                "26-35" -> weightedChoice(listOf("未婚", "已婚"), listOf(45, 55))
-                "36-45" -> weightedChoice(listOf("未婚", "已婚"), listOf(15, 85))
-                else -> weightedChoice(listOf("未婚", "已婚"), listOf(10, 90))
+                "18-25" -> weightedChoice(listOf("未婚", "已婚"), listOf(90, 10), random)
+                "26-35" -> weightedChoice(listOf("未婚", "已婚"), listOf(45, 55), random)
+                "36-45" -> weightedChoice(listOf("未婚", "已婚"), listOf(15, 85), random)
+                else -> weightedChoice(listOf("未婚", "已婚"), listOf(10, 90), random)
             }
             val hasChildren = when {
-                marital == "未婚" -> Random.nextDouble() < 0.03
-                ageGroup == "36-45" || ageGroup == "46-60" -> Random.nextDouble() < 0.90
-                ageGroup == "26-35" -> Random.nextDouble() < 0.50
-                else -> Random.nextDouble() < 0.10
+                marital == "未婚" -> random.nextDouble() < 0.03
+                ageGroup == "36-45" || ageGroup == "46-60" -> random.nextDouble() < 0.90
+                ageGroup == "26-35" -> random.nextDouble() < 0.50
+                else -> random.nextDouble() < 0.10
             }
-            val satisfaction = gaussian(0.6, 0.15).coerceIn(0.1, 0.9)
+            val satisfaction = gaussian(0.6, 0.15, random).coerceIn(0.1, 0.9)
             return Persona(gender, ageGroup, education, occupation, income, marital, hasChildren, satisfaction)
         }
 
-        private fun gaussian(mean: Double, sd: Double): Double {
+        private fun gaussian(mean: Double, sd: Double, random: Random): Double {
             var u = 0.0; var v = 0.0
-            while (u == 0.0) u = Random.nextDouble()
-            while (v == 0.0) v = Random.nextDouble()
+            while (u == 0.0) u = random.nextDouble()
+            while (v == 0.0) v = random.nextDouble()
             return mean + sd * kotlin.math.sqrt(-2.0 * kotlin.math.ln(u)) * kotlin.math.cos(2.0 * Math.PI * v)
         }
     }

@@ -9,15 +9,15 @@ import kotlin.random.Random
 object Probabilities {
 
     /** 按权重随机选择索引。复刻 weighted_index：仅命中正权重区间。 */
-    fun weightedIndex(probabilities: List<Double>): Int {
+    fun weightedIndex(probabilities: List<Double>, random: Random = Random.Default): Int {
         require(probabilities.isNotEmpty()) { "probabilities cannot be empty" }
         val weights = probabilities.map { v ->
             val w = if (v.isNaN() || v.isInfinite() || v < 0.0) 0.0 else v
             w
         }
         val total = weights.sum()
-        if (total <= 0.0) return Random.nextInt(weights.size)
-        val pivot = Random.nextDouble() * total
+        if (total <= 0.0) return random.nextInt(weights.size)
+        val pivot = random.nextDouble() * total
         var running = 0.0
         var lastPositive = 0
         for (i in weights.indices) {
@@ -59,11 +59,11 @@ object Probabilities {
         return if (total > 0) sanitized.map { it / total } else List(optionCount) { 1.0 / optionCount }
     }
 
-    fun stochasticRound(value: Double): Int {
+    fun stochasticRound(value: Double, random: Random = Random.Default): Int {
         if (!value.isFinite() || value <= 0.0) return 0
         val lower = kotlin.math.floor(value).toInt()
         val fraction = (value - lower).coerceIn(0.0, 1.0)
-        return if (Random.nextDouble() < fraction) lower + 1 else lower
+        return if (random.nextDouble() < fraction) lower + 1 else lower
     }
 
     /** 按权重不放回抽样。复刻 weighted_sample_without_replacement。 */
@@ -71,6 +71,7 @@ object Probabilities {
         indices: List<Int>,
         weights: List<Double>,
         count: Int,
+        random: Random = Random.Default,
     ): List<Int> {
         if (count <= 0) return emptyList()
         val pool = indices.zip(weights)
@@ -83,7 +84,7 @@ object Probabilities {
         while (pool.isNotEmpty() && selected.size < target) {
             val total = pool.sumOf { it[1] }
             if (total <= 0.0) break
-            val pivot = Random.nextDouble() * total
+            val pivot = random.nextDouble() * total
             var running = 0.0
             var chosen = pool.size - 1
             for (idx in pool.indices) {

@@ -101,8 +101,8 @@ object ConfigPreflight {
                 )
             }
 
-        HttpLogicPlanner.fallbackReason(draft.definition.questions).takeIf { it.isNotBlank() }?.let { reason ->
-            errors.add(Issue(Severity.ERROR, "问卷逻辑无法安全执行", reason))
+        HttpLogicPlanner.fallbackIssue(draft.definition.questions)?.let { issue ->
+            errors.add(Issue(Severity.ERROR, "问卷逻辑无法安全执行", issue.message, issue.questionNumber))
         }
 
         val configuredNums = mutableSetOf<Int>()

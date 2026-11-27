@@ -3,6 +3,8 @@ package com.surveycontroller.android.core.questions
 /**
  * 填空文本解析。1:1 复刻 software/core/questions/text_values.py:resolve_text_values_from_config。
  */
+import kotlin.random.Random
+
 object TextValues {
     const val MULTI_TEXT_DELIMITER = "\u0001"
     const val DESKTOP_MULTI_TEXT_DELIMITER = "||"
@@ -19,6 +21,8 @@ object TextValues {
         blankModes: List<String> = emptyList(),
         blankIntRanges: List<List<Int>> = emptyList(),
         gender: String? = null,
+        random: Random = Random.Default,
+        referenceYear: Int? = null,
     ): List<String> {
         val cands = candidates.map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(RandomText.DEFAULT_FILL_TEXT) }
         var weights = probs.toMutableList()
@@ -31,13 +35,13 @@ object TextValues {
         } catch (e: Exception) {
             List(cands.size) { 1.0 / cands.size }
         }
-        val selectedRaw = cands[Probabilities.weightedIndex(normalized)]
+        val selectedRaw = cands[Probabilities.weightedIndex(normalized, random)]
         val resolvedBlankCount = maxOf(1, blankCount)
 
         val textValues = if (entryType.trim() == "multi_text") {
-            splitMultiTextCandidate(selectedRaw).map { RandomText.resolveDynamicToken(it, gender) }.toMutableList()
+            splitMultiTextCandidate(selectedRaw).map { RandomText.resolveDynamicToken(it, gender, random, referenceYear) }.toMutableList()
         } else {
-            mutableListOf(RandomText.resolveDynamicToken(selectedRaw, gender))
+            mutableListOf(RandomText.resolveDynamicToken(selectedRaw, gender, random, referenceYear))
         }
         if (textValues.isEmpty()) textValues.add(RandomText.DEFAULT_FILL_TEXT)
         while (textValues.size < resolvedBlankCount) textValues.add(textValues.last())
@@ -46,14 +50,14 @@ object TextValues {
         for (i in 0 until resolvedBlankCount) {
             val mode = blankModes.getOrNull(i)?.trim()?.lowercase().orEmpty()
             when (mode) {
-                MODE_RANDOM_NAME, "name" -> textValues[i] = RandomText.resolveDynamicToken("__RANDOM_NAME__", gender)
-                MODE_RANDOM_MOBILE, "mobile" -> textValues[i] = RandomText.resolveDynamicToken("__RANDOM_MOBILE__", gender)
-                MODE_RANDOM_ID_CARD, "id_card" -> textValues[i] = RandomText.resolveDynamicToken("__RANDOM_ID_CARD__", gender)
+                MODE_RANDOM_NAME, "name" -> textValues[i] = RandomText.resolveDynamicToken("__RANDOM_NAME__", gender, random, referenceYear)
+                MODE_RANDOM_MOBILE, "mobile" -> textValues[i] = RandomText.resolveDynamicToken("__RANDOM_MOBILE__", gender, random, referenceYear)
+                MODE_RANDOM_ID_CARD, "id_card" -> textValues[i] = RandomText.resolveDynamicToken("__RANDOM_ID_CARD__", gender, random, referenceYear)
                 MODE_RANDOM_INTEGER, "integer" -> {
                     val range = blankIntRanges.getOrNull(i)
                     if (range != null && range.size >= 2) {
                         val token = "${RandomText.RANDOM_INT_TOKEN_PREFIX}${minOf(range[0], range[1])}:${maxOf(range[0], range[1])}"
-                        textValues[i] = RandomText.resolveDynamicToken(token, gender)
+                        textValues[i] = RandomText.resolveDynamicToken(token, gender, random, referenceYear)
                     }
                 }
             }

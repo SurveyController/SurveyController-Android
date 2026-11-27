@@ -22,6 +22,7 @@ interface SamplePlanProvider {
  */
 class TendencyState(
     private val profile: ReliabilityProfile = DEFAULT_RELIABILITY_PROFILE,
+    private val random: Random = Random.Default,
 ) {
     private val dimensionBases = HashMap<String, Double>()
     private val smallScaleStaticMaxOptions = 3
@@ -31,19 +32,19 @@ class TendencyState(
 
     private fun randomByProbabilities(optionCount: Int, probabilities: List<Double>?): Int {
         return if (probabilities != null && probabilities.size == optionCount) {
-            Probabilities.weightedIndex(probabilities)
+            Probabilities.weightedIndex(probabilities, random)
         } else {
-            Random.nextInt(optionCount)
+            random.nextInt(optionCount)
         }
     }
 
     private fun generateBaseRatio(optionCount: Int, probabilities: List<Double>?): Double {
-        if (probabilities == null) return Random.nextDouble()
+        if (probabilities == null) return random.nextDouble()
         if (probabilities.isNotEmpty()) {
-            val idx = Probabilities.weightedIndex(probabilities)
+            val idx = Probabilities.weightedIndex(probabilities, random)
             return idx.toDouble() / maxOf(optionCount - 1, 1)
         }
-        return Random.nextDouble()
+        return random.nextDouble()
     }
 
     private fun resolveFluctuationWindow(optionCount: Int): Int {
@@ -119,7 +120,7 @@ class TendencyState(
         val candidates = (low..high).toList()
         val weights = candidates.map { windowDecay(abs(it - effectiveBase), window) }
         val total = weights.sum()
-        val pivot = Random.nextDouble() * total
+        val pivot = random.nextDouble() * total
         var running = 0.0
         for (i in weights.indices) {
             running += weights[i]
