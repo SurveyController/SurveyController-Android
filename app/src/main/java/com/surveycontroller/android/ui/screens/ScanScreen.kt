@@ -12,14 +12,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -41,33 +37,77 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
 import java.util.concurrent.atomic.AtomicBoolean
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import com.surveycontroller.android.ui.components.StudioEmblem
+import com.surveycontroller.android.ui.components.StudioTopBar
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun ScanScreen(onResult: (String) -> Unit, onBack: () -> Unit) {
     val permission = rememberPermissionState(Manifest.permission.CAMERA)
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("扫描二维码") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            )
-        },
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { StudioTopBar("扫描二维码", onBack) },
     ) { inner ->
         Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
             if (permission.status.isGranted) {
                 CameraPreview(onResult)
-            } else {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("需要相机权限以扫描二维码")
-                    Button(onClick = { permission.launchPermissionRequest() }, modifier = Modifier.padding(top = 12.dp)) {
-                        Text("授予相机权限")
-                    }
+                ScannerReticle()
+                Surface(
+                    Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(20.dp),
+                    shape = MaterialTheme.shapes.large,
+                    color = Color(0xE61F222B),
+                    contentColor = Color.White,
+                ) {
+                    Text("把问卷二维码放在取景框内", Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
                 }
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(13.dp),
+                    modifier = Modifier.padding(24.dp),
+                ) {
+                    StudioEmblem(Icons.Filled.QrCodeScanner)
+                    Text("允许相机访问", style = MaterialTheme.typography.headlineSmall)
+                    Text("打开相机后即可扫描问卷二维码。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = { permission.launchPermissionRequest() }) { Text("授予相机权限") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScannerReticle() {
+    Canvas(Modifier.fillMaxSize()) {
+        val edge = size.minDimension * 0.64f
+        val left = (size.width - edge) / 2
+        val top = (size.height - edge) / 2
+        val right = left + edge
+        val bottom = top + edge
+        val scrim = Color.Black.copy(alpha = 0.48f)
+        val marker = Color(0xFFE5EBFF)
+        drawRect(scrim, size = Size(size.width, top))
+        drawRect(scrim, Offset(0f, bottom), Size(size.width, top))
+        drawRect(scrim, Offset(0f, top), Size(left, edge))
+        drawRect(scrim, Offset(right, top), Size(left, edge))
+        val arm = edge * 0.13f
+        val stroke = 3.dp.toPx()
+        for (x in listOf(left, right)) {
+            for (y in listOf(top, bottom)) {
+                val corner = Offset(x, y)
+                drawLine(marker, corner, Offset(x + if (x == left) arm else -arm, y), stroke, StrokeCap.Round)
+                drawLine(marker, corner, Offset(x, y + if (y == top) arm else -arm), stroke, StrokeCap.Round)
             }
         }
     }

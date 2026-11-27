@@ -168,6 +168,7 @@ android/
 │   │   └── test/                  # 单元测试（对标 CI/unit_tests/）
 │   ├── build.gradle.kts           # 构建配置
 │   └── proguard-rules.pro         # 混淆规则
+├── static/screenshot/               # README 界面截图
 ├── gradle/
 │   ├── libs.versions.toml         # 依赖版本目录
 │   └── wrapper/

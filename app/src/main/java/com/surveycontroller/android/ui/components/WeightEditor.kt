@@ -101,17 +101,13 @@ fun WeightEditor(
 
 @Composable
 private fun DistributionBar(values: List<Int>) {
-    val palette = listOf(
-        Color(0xFF0067C0), Color(0xFF2E9E5B), Color(0xFFE8833A), Color(0xFF9B59B6),
-        Color(0xFFE74C3C), Color(0xFF16A085), Color(0xFFF1C40F), Color(0xFF34495E),
-    )
     val total = values.sum().coerceAtLeast(1)
     Row(
         Modifier.fillMaxWidth().height(12.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(6.dp)),
         horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         values.forEachIndexed { i, v ->
-            if (v > 0) Box(Modifier.weight(v.toFloat() / total).fillMaxHeight().background(palette[i % palette.size]))
+            if (v > 0) Box(Modifier.weight(v.toFloat() / total).fillMaxHeight().background(distributionColors[i % distributionColors.size]))
         }
     }
 }

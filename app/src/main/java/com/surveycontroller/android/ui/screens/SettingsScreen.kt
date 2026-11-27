@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,6 +53,11 @@ import androidx.compose.ui.platform.LocalContext
 import com.surveycontroller.android.data.SettingsStore
 import com.surveycontroller.android.ui.MainViewModel
 import kotlinx.coroutines.launch
+import com.surveycontroller.android.ui.components.StudioCard
+import com.surveycontroller.android.ui.components.StudioEmblem
+import com.surveycontroller.android.ui.components.StudioHeading
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.HorizontalDivider
 
 @Composable
 fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
@@ -77,7 +81,7 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("设置", style = MaterialTheme.typography.headlineSmall)
+        StudioHeading("设置", "管理界面、运行偏好和本机数据。", Icons.Filled.Settings)
 
         // ===== 外观 =====
         SectionCard("外观") {
@@ -251,9 +255,10 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
 
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+    StudioCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             content()
         }
     }
@@ -262,7 +267,7 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun SwitchRow(icon: ImageVector, title: String, content: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+        StudioEmblem(icon)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(content, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

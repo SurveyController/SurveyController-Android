@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +33,10 @@ import com.surveycontroller.android.core.questions.OfflineRehearsal
 import com.surveycontroller.android.ui.MainViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.surveycontroller.android.ui.components.StudioCard
+import com.surveycontroller.android.ui.components.StudioEmblem
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Checklist
 
 @Composable
 internal fun OfflineRehearsalDialog(
@@ -55,6 +58,7 @@ internal fun OfflineRehearsalDialog(
         Surface(
             modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.90f),
             shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.background,
         ) {
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
@@ -63,7 +67,13 @@ internal fun OfflineRehearsalDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("离线试跑", style = MaterialTheme.typography.titleLarge)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            StudioEmblem(Icons.Filled.Checklist)
+                            Text("离线试跑", style = MaterialTheme.typography.headlineSmall)
+                        }
                         TextButton(onClick = onDismiss) { Text("关闭") }
                     }
                 }
@@ -129,7 +139,7 @@ internal fun OfflineRehearsalDialog(
                     }
                     if (showDistribution) {
                         items(result.distributions, key = { "distribution-${it.number}" }) { question ->
-                            Card(Modifier.fillMaxWidth()) {
+                            StudioCard(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     QuestionLink(question.number, question.title, question.number in editableQuestions, onEditQuestion)
                                     Text("${question.answeredCount}/${result.samples.size} 份样例作答")
@@ -160,7 +170,7 @@ internal fun OfflineRehearsalDialog(
                             }
                         }
                         items(sample.questions, key = { "sample-${it.number}" }) { question ->
-                            Card(Modifier.fillMaxWidth()) {
+                            StudioCard(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     QuestionLink(question.number, question.title, question.number in editableQuestions, onEditQuestion)
                                     Text(

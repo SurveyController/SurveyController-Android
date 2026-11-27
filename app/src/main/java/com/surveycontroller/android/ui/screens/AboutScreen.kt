@@ -16,7 +16,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -41,6 +40,8 @@ import com.surveycontroller.android.R
 import com.surveycontroller.android.app.AppVersion
 import com.surveycontroller.android.ui.MainViewModel
 import com.surveycontroller.android.ui.components.ZoomableImageDialog
+import com.surveycontroller.android.ui.components.StudioCard
+import com.surveycontroller.android.ui.components.studioFeature
 
 private data class Contributor(val name: String, val url: String)
 
@@ -69,12 +70,20 @@ fun AboutScreen(viewModel: MainViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Image(painter = painterResource(R.drawable.app_logo), contentDescription = null, modifier = Modifier.size(80.dp).padding(top = 12.dp))
-        Text("SurveyController", style = MaterialTheme.typography.headlineSmall)
-        Text("高效的自动化问卷填写工具", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier.fillMaxWidth().studioFeature().padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(painter = painterResource(R.drawable.app_logo), contentDescription = null, modifier = Modifier.size(54.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("SurveyController", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.headlineSmall)
+                Text("Android · v${AppVersion.VERSION}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+            }
+        }
 
         // 免责声明警示条
-        Card(
+        StudioCard(
             Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
         ) {
@@ -90,7 +99,7 @@ fun AboutScreen(viewModel: MainViewModel) {
         }
 
         // 检查更新
-        Card(Modifier.fillMaxWidth()) {
+        StudioCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column {
@@ -125,7 +134,7 @@ fun AboutScreen(viewModel: MainViewModel) {
         }
 
         // 社区 / 联系 / 贡献
-        Card(Modifier.fillMaxWidth()) {
+        StudioCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Text("社区", style = MaterialTheme.typography.titleMedium)
                 Text("加入交流群获取最新版本、反馈问题和交流经验。",
@@ -148,7 +157,7 @@ fun AboutScreen(viewModel: MainViewModel) {
         }
 
         // 赞赏支持
-        Card(Modifier.fillMaxWidth()) {
+        StudioCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("支持作者", style = MaterialTheme.typography.titleMedium)
                 Text("如果这个项目对你有帮助，欢迎请作者喝杯奶茶~", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
@@ -178,7 +187,7 @@ fun AboutScreen(viewModel: MainViewModel) {
         }
 
         // 致谢 / 许可 / 条款
-        Card(Modifier.fillMaxWidth()) {
+        StudioCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("开源许可", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
