@@ -50,6 +50,35 @@ class ConfigCodecTest {
     }
 
     @Test
+    fun option_fill_candidates_round_trip_and_compile_with_legacy_strings() {
+        val meta = SurveyQuestionMeta(
+            num = 1, title = "测试题", typeCode = "4", options = 3,
+            optionTexts = listOf("A", "B", "C"), fillableOptions = listOf(0, 1, 2),
+        )
+        val definition = SurveyDefinition(SurveyProviderType.WJX, "https://www.wjx.cn/vm/demo.aspx", "示例", listOf(meta))
+        val draft = SurveyConfigDraft.fromDefinition(definition)
+        val question = draft.questions.single().copy(
+            optionFillTexts = mutableListOf(null, "原文本", null),
+            optionFillCandidates = mapOf(0 to listOf(" 甲 ", "", "乙")),
+        )
+        val restored = ConfigCodec.deserialize(ConfigCodec.serialize(draft.copy(questions = listOf(question))))
+        val compiled = ConfigCompiler.compile(restored)
+        assertEquals(listOf(null, "原文本", null), restored.questions.single().optionFillTexts)
+        assertEquals(listOf(" 甲 ", "", "乙"), restored.questions.single().optionFillCandidates[0])
+        assertEquals(mapOf(1 to mapOf(0 to listOf("甲", "乙"))), compiled.optionFillCandidates)
+    }
+
+    @Test
+    fun old_free_ai_mode_inherits_local_provider_settings() {
+        val draft = ConfigCodec.deserialize("""{"ai_mode":"free","ai_config_mode":"override"}""")
+        assertTrue(!draft.preserved.importedAiConfig.present)
+        val local = ConfigCompiler.AiOptions(enabled = true, model = "local")
+        val (params, effective) = ConfigCompiler.resolveAiOptions(draft, local)
+        assertEquals("provider", params.aiMode)
+        assertEquals(local, effective)
+    }
+
+    @Test
     fun round_trips_config_with_schema_v6() {
         val q1 = SurveyQuestionMeta(num = 1, title = "性别", typeCode = "3", options = 2, optionTexts = listOf("男", "女"))
         val q2 = SurveyQuestionMeta(num = 2, title = "满意度", typeCode = "5", options = 5, optionTexts = listOf("1", "2", "3", "4", "5"))
@@ -1937,7 +1966,7 @@ class ConfigCodecTest {
         val exported = JSONObject(ConfigCodec.serialize(restored))
         assertEquals("provider", exported.getString("ai_mode"))
         assertEquals("custom", exported.getString("ai_provider"))
-        assertEquals("sk-test", exported.getString("ai_api_key"))
+        assertTrue(!exported.has("ai_api_key"))
         assertEquals("https://api.example.com/v1", exported.getString("ai_base_url"))
         assertEquals("model-x", exported.getString("ai_model"))
         assertEquals("按题目生成自然回答", exported.getString("ai_system_prompt"))

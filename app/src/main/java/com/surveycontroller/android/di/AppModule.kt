@@ -2,7 +2,6 @@ package com.surveycontroller.android.di
 
 import android.content.Context
 import com.surveycontroller.android.core.backend.BackendClient
-import com.surveycontroller.android.core.backend.ContactClient
 import com.surveycontroller.android.core.backend.DeviceIdentity
 import com.surveycontroller.android.core.backend.RandomIpSessionStore
 import com.surveycontroller.android.core.engine.RunEngine
@@ -45,13 +44,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideContactClient(http: HttpClient, sessionStore: RandomIpSessionStore): ContactClient =
-        ContactClient(http, sessionStore)
-
-    @Provides
-    @Singleton
-    fun provideProviderRegistry(http: HttpClient, backend: BackendClient): ProviderRegistry =
-        ProviderRegistry(http, backend)
+    fun provideProviderRegistry(http: HttpClient): ProviderRegistry =
+        ProviderRegistry(http)
 
     @Provides
     @Singleton

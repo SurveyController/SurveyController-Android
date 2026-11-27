@@ -22,7 +22,6 @@ object BackendEndpoints {
     val cardRedeem get() = "$base/api/cards/redeem"
     val ipExtract get() = "$base/api/ip/extract"
     val submissionReport get() = "$base/api/submission/report"
-    val aiFree get() = "$base/api/ai/free"
     val status get() = "$base/api/status"
     val ipUsage get() = "$base/ipzan/usage"
 }
@@ -308,87 +307,6 @@ class BackendClient(
             status == 200
         } catch (e: Exception) {
             false
-        }
-    }
-
-    /** 免费 AI 填空（单题）。复刻 call_free_ai_api_async。身份缺失自动领取试用。 */
-    suspend fun freeAiAnswer(questionContent: String, questionType: String, blankCount: Int?, systemPrompt: String?): List<String> {
-        var session = sessionStore.load()
-        if (!session.ready) session = ensureSession()
-        val body = JSONObject()
-            .put("user_id", session.userId)
-            .put("question_type", questionType)
-            .put("question_content", questionContent)
-        systemPrompt?.trim()?.takeIf { it.isNotEmpty() }?.let { body.put("system_prompt", it) }
-        if (questionType == "multi_fill_blank") body.put("blank_count", blankCount ?: 0)
-        val (status, json) = postJson(BackendEndpoints.aiFree, body, 60)
-        if (status != 200) throw errorFrom(status, json)
-        val raw = json.optJSONArray("answers") ?: throw BackendException("ai_empty_response", status)
-        val answers = (0 until raw.length()).mapNotNull { raw.optString(it).trim().takeIf { s -> s.isNotEmpty() } }
-        if (answers.isEmpty()) throw BackendException("ai_empty_response", status)
-        return answers
-    }
-
-    /** 免费 AI 批量填空项。 */
-    data class FreeAiBatchItem(val itemId: String, val questionType: String, val content: String, val blankCount: Int?)
-
-    /**
-     * 免费 AI 批量填空：提交任务并轮询直至完成。复刻 free_api.py 的 batch/poll 链路。
-     * 返回 itemId -> answers。失败项不返回。
-     */
-    suspend fun freeAiBatch(items: List<FreeAiBatchItem>, systemPrompt: String?): Map<String, List<String>> {
-        if (items.isEmpty()) return emptyMap()
-        var session = sessionStore.load()
-        if (!session.ready) session = ensureSession()
-        val completed = HashMap<String, List<String>>()
-        // 单任务最多 64 题，分块提交
-        items.chunked(64).forEach { chunk ->
-            runCatching { submitAndPollBatch(session.userId, chunk, systemPrompt, completed) }
-        }
-        return completed
-    }
-
-    private suspend fun submitAndPollBatch(
-        userId: Int,
-        chunk: List<FreeAiBatchItem>,
-        systemPrompt: String?,
-        completed: HashMap<String, List<String>>,
-    ) {
-        val payloadItems = JSONArray()
-        for (item in chunk) {
-            val o = JSONObject().put("item_id", item.itemId).put("question_type", item.questionType).put("question_content", item.content)
-            if (item.questionType == "multi_fill_blank") o.put("blank_count", item.blankCount ?: 0)
-            payloadItems.put(o)
-        }
-        val body = JSONObject().put("user_id", userId).put("items", payloadItems)
-        systemPrompt?.trim()?.takeIf { it.isNotEmpty() }?.let { body.put("system_prompt", it) }
-        val (submitStatus, submitJson) = postJson("${BackendEndpoints.aiFree}/batch", body, 60)
-        if (submitStatus != 200 && submitStatus != 202) throw errorFrom(submitStatus, submitJson)
-        val taskId = submitJson.optString("task_id").trim()
-        if (taskId.isEmpty()) throw BackendException("missing task_id", submitStatus)
-
-        // 轮询直至终态（最多 ~45s）
-        val deadline = System.currentTimeMillis() + 45_000
-        var pollAfter = submitJson.optInt("poll_after_ms", 1000).coerceIn(200, 3000)
-        while (System.currentTimeMillis() < deadline) {
-            kotlinx.coroutines.delay(pollAfter.toLong())
-            val resp = http.get("${BackendEndpoints.aiFree}/tasks/$taskId", headers = headers(), timeoutSeconds = 60)
-            val json = try { JSONObject(resp.body.ifBlank { "{}" }) } catch (e: Exception) { JSONObject() }
-            pollAfter = json.optInt("poll_after_ms", pollAfter).coerceIn(200, 3000)
-            json.optJSONArray("items")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val it = arr.optJSONObject(i) ?: continue
-                    if (it.optString("status").lowercase() == "completed") {
-                        val a = it.optJSONArray("answers")
-                        if (a != null) {
-                            val list = (0 until a.length()).mapNotNull { k -> a.optString(k).trim().takeIf { s -> s.isNotEmpty() } }
-                            if (list.isNotEmpty()) completed[it.optString("item_id")] = list
-                        }
-                    }
-                }
-            }
-            val status = json.optString("status").lowercase()
-            if (status in listOf("completed", "partial", "failed", "expired")) break
         }
     }
 

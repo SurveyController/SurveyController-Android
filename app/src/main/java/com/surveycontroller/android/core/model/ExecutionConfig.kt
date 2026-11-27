@@ -32,6 +32,7 @@ data class ExecutionConfig(
     val singleAttachedOptionSelects: List<List<Map<String, Any?>>> = emptyList(),
     val droplistOptionFillTexts: List<List<String?>?> = emptyList(),
     val multipleOptionFillTexts: List<List<String?>?> = emptyList(),
+    val optionFillCandidates: Map<Int, Map<Int, List<String>>> = emptyMap(),
     val multipleAttachedOptionSelects: List<List<Map<String, Any?>>> = emptyList(),
     val answerRules: List<Map<String, Any?>> = emptyList(),
 
@@ -70,7 +71,7 @@ data class ExecutionConfig(
     val pauseOnAliyunCaptcha: Boolean = true,
 
     // ===== AI =====
-    val aiMode: String = "free",
+    val aiMode: String = "provider",
     val aiSystemPrompt: String = "",
     val aiEnabled: Boolean = false,
     val aiBaseUrl: String = "",

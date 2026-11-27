@@ -1,8 +1,6 @@
 package com.surveycontroller.android.provider
 
-import com.surveycontroller.android.core.ai.FreeAiTextProvider
 import com.surveycontroller.android.core.ai.OpenAiTextProvider
-import com.surveycontroller.android.core.backend.BackendClient
 import com.surveycontroller.android.core.model.ExecutionConfig
 import com.surveycontroller.android.core.model.ExecutionState
 import com.surveycontroller.android.core.network.HttpClient
@@ -16,15 +14,12 @@ import com.surveycontroller.android.provider.wjx.WjxProvider
  */
 class ProviderRegistry(
     http: HttpClient,
-    backend: BackendClient,
-    answerContextFactory: (ExecutionConfig, ExecutionState, String) -> AnswerContext = defaultFactory(http, backend),
+    answerContextFactory: (ExecutionConfig, ExecutionState, String) -> AnswerContext = defaultFactory(http),
 ) {
     companion object {
-        /** 默认上下文工厂：注入 AI 填空（免费/自定义）、人设加权、心理测量计划、反向填充。 */
-        fun defaultFactory(http: HttpClient, backend: BackendClient): (ExecutionConfig, ExecutionState, String) -> AnswerContext =
+        fun defaultFactory(http: HttpClient): (ExecutionConfig, ExecutionState, String) -> AnswerContext =
             { config, state, thread ->
                 val aiProvider = when {
-                    config.aiMode == "free" -> FreeAiTextProvider(backend, config.aiSystemPrompt)
                     config.aiEnabled && config.aiBaseUrl.isNotBlank() ->
                         OpenAiTextProvider(http, config.aiBaseUrl, config.aiApiKey, config.aiModel, config.aiSystemPrompt, config.aiApiProtocol)
                     else -> null

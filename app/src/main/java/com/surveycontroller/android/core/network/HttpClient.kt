@@ -9,7 +9,6 @@ import okhttp3.Headers.Companion.toHeaders
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -113,32 +112,6 @@ open class HttpClient(
         timeoutSeconds,
         surveySubmission,
     )
-
-    /** multipart/form-data 上传文件项（联系开发者用）。filename 为空表示普通文本字段。 */
-    data class Part(val name: String, val value: String, val bytes: ByteArray? = null, val filename: String? = null, val mime: String = "application/octet-stream")
-
-    /** POST multipart/form-data。对齐桌面端 contact_form 的 requests.post(files=...)。 */
-    suspend fun postMultipart(
-        url: String,
-        parts: List<Part>,
-        headers: Map<String, String> = emptyMap(),
-        timeoutSeconds: Long = 0,
-        proxyAddress: String? = null,
-    ): HttpResponse {
-        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
-        for (p in parts) {
-            if (p.bytes != null && p.filename != null) {
-                builder.addFormDataPart(p.name, p.filename, p.bytes.toRequestBody(p.mime.toMediaTypeOrNull()))
-            } else {
-                builder.addFormDataPart(p.name, p.value)
-            }
-        }
-        return execute(
-            Request.Builder().url(url).headers(headers.toHeaders()).post(builder.build()).build(),
-            proxyAddress,
-            timeoutSeconds,
-        )
-    }
 
     private suspend fun execute(
         request: Request,

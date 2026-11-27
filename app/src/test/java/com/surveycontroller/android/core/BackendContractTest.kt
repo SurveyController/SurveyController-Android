@@ -18,14 +18,12 @@ class BackendContractTest {
         assertEquals("https://api-wjx.hungrym0.top/api/cards/redeem", BackendEndpoints.cardRedeem)
         assertEquals("https://api-wjx.hungrym0.top/api/ip/extract", BackendEndpoints.ipExtract)
         assertEquals("https://api-wjx.hungrym0.top/api/submission/report", BackendEndpoints.submissionReport)
-        assertEquals("https://api-wjx.hungrym0.top/api/ai/free", BackendEndpoints.aiFree)
         assertEquals("https://api-wjx.hungrym0.top/api/status", BackendEndpoints.status)
     }
 
     @Test
     fun base_override_applies_to_all_endpoints() {
         BackendEndpoints.base = "https://example.test"
-        assertTrue(BackendEndpoints.aiFree.startsWith("https://example.test/"))
         // 还原默认，避免影响其他测试
         BackendEndpoints.base = "https://api-wjx.hungrym0.top"
     }

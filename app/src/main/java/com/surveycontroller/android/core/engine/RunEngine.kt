@@ -357,7 +357,7 @@ class RunEngine internal constructor(
                         stopWithReason(
                             state,
                             "AI 填空连续失败达到 ${RunStopPolicy.AI_FILL_FAIL_THRESHOLD} 次，已停止；请检查 AI 配置或稍后重试",
-                            category = "free_ai_unstable",
+                            category = "ai_failure_threshold",
                             failureReason = "ai_failure",
                         )
                         break

@@ -1065,19 +1065,26 @@ private fun OptionFillEditor(q: QuestionConfigDraft, update: ((QuestionConfigDra
         Text("选项填空（如“其他____”）", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         indices.forEach { optionIndex ->
             OutlinedTextField(
-                value = q.optionFillTexts.getOrNull(optionIndex).orEmpty(),
+                value = q.optionFillCandidates[optionIndex]?.joinToString("\n")
+                    ?: q.optionFillTexts.getOrNull(optionIndex).orEmpty(),
                 onValueChange = { value ->
                     update { draft ->
                         val fills = MutableList(maxOf(draft.optionTexts.size, draft.optionFillTexts.size)) { idx ->
                             draft.optionFillTexts.getOrNull(idx)
                         }
-                        fills[optionIndex] = value
-                        draft.copy(optionFillTexts = fills)
+                        val lines = value.lines()
+                        fills[optionIndex] = lines.singleOrNull()
+                        val candidates = if (lines.size > 1) {
+                            draft.optionFillCandidates + (optionIndex to lines)
+                        } else {
+                            draft.optionFillCandidates - optionIndex
+                        }
+                        draft.copy(optionFillTexts = fills, optionFillCandidates = candidates)
                     }
                 },
                 label = { Text("${q.optionTexts[optionIndex].ifBlank { "选项 ${optionIndex + 1}" }} 的补充文本") },
+                supportingText = { Text("每行一个候选，作答时随机抽取") },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                singleLine = true,
             )
         }
     }
