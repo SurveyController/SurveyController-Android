@@ -3,6 +3,7 @@ package com.surveycontroller.android.core.questions
 import com.surveycontroller.android.core.model.ExecutionConfig
 import com.surveycontroller.android.core.model.ExecutionState
 import com.surveycontroller.android.core.model.SurveyQuestionMeta
+import kotlin.random.Random
 
 /** 反向填充答案（按题号返回固定答案）。阶段5实现。 */
 interface ReverseFillResolver {
@@ -61,6 +62,9 @@ class AnswerContext(
     val persona: PersonaBoost = NoPersonaBoost,
     val psychoPlan: PsychoPlanLookup? = null,
     val allowAiPlaceholder: Boolean = false,
+    val random: Random = Random.Default,
+    val syntheticDataYear: Int? = null,
+    onRuleMatched: ((AnswerRule) -> Unit)? = null,
 ) {
     /** 本份问卷的已答记录（供条件规则引用）。 */
     val answered: AnsweredTracker = AnsweredTracker()
@@ -69,6 +73,7 @@ class AnswerContext(
     val consistency: ConsistencyEngine = ConsistencyEngine(
         rules = config.answerRules.mapNotNull { AnswerRule.fromMap(it) },
         tracker = answered,
+        onRuleMatched = onRuleMatched,
     )
 
     fun dimensionOf(questionNum: Int): String? = config.questionDimensionMap[questionNum]

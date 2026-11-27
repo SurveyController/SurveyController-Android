@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -34,10 +36,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -78,6 +82,26 @@ fun ConfigureScreen(viewModel: MainViewModel, onBack: () -> Unit, onRun: () -> U
     val state by viewModel.workbench.collectAsState()
     val draft = state.draft
     var typeFilter by remember { mutableStateOf<QuestionEntryType?>(null) }
+    var showingRehearsal by remember { mutableStateOf(false) }
+    var targetQuestion by remember { mutableStateOf<Int?>(null) }
+    var jumpRequest by remember { mutableStateOf(0) }
+    val listState = rememberLazyListState()
+    val editableQuestions = draft?.questions?.map { it.num }?.toSet().orEmpty()
+    val jumpToQuestion: (Int) -> Unit = { number ->
+        if (number in editableQuestions) {
+            showingRehearsal = false
+            typeFilter = null
+            targetQuestion = number
+            jumpRequest++
+        }
+    }
+    LaunchedEffect(jumpRequest) {
+        val index = draft?.questions?.indexOfFirst { it.num == targetQuestion } ?: -1
+        if (index >= 0) listState.scrollToItem(index + 1)
+    }
+    if (showingRehearsal) {
+        OfflineRehearsalDialog(viewModel, editableQuestions, onDismiss = { showingRehearsal = false }, onEditQuestion = jumpToQuestion)
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -108,17 +132,22 @@ fun ConfigureScreen(viewModel: MainViewModel, onBack: () -> Unit, onRun: () -> U
         bottomBar = {
             if (draft != null) {
                 androidx.compose.material3.Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
-                    Button(
-                        onClick = onRun,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(16.dp)
-                            .height(52.dp),
+                    Column(
+                        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("开始执行 · ${draft.params.targetNum} 份", style = MaterialTheme.typography.titleMedium)
+                        OutlinedButton(
+                            onClick = { showingRehearsal = true },
+                            enabled = draft.questions.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("离线试跑")
+                        }
+                        Button(onClick = onRun, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("开始执行 · ${draft.params.targetNum} 份", style = MaterialTheme.typography.titleMedium)
+                        }
                     }
                 }
             }
@@ -128,39 +157,42 @@ fun ConfigureScreen(viewModel: MainViewModel, onBack: () -> Unit, onRun: () -> U
             Text("请先解析问卷", modifier = Modifier.padding(inner).padding(16.dp))
             return@Scaffold
         }
+        val shown = draft.questions.withIndex().filter { typeFilter == null || it.value.entryType == typeFilter }
+        val metaByNum = draft.definition.questions.associateBy { it.num }
+        val suggestions = dimensionSuggestions(draft)
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(inner),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item { ConfigIoRow(viewModel) }
-            item { SurveyOverviewCard(draft, viewModel) }
-            item { PreflightCard(viewModel) }
-            item { RunParamsCard(viewModel) }
             item {
-                OutlinedButton(onClick = onEditRules, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("条件规则编辑（${draft.answerRules.size}）")
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    ConfigIoRow(viewModel)
+                    SurveyOverviewCard(draft, viewModel)
+                    PreflightCard(viewModel, editableQuestions, jumpToQuestion)
+                    RunParamsCard(viewModel)
+                    OutlinedButton(onClick = onEditRules, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("条件规则编辑（${draft.answerRules.size}）")
+                    }
+                    Text("题目配置", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
+                    TypeFilterRow(draft, typeFilter) { typeFilter = it }
                 }
             }
-            item {
-                Text("题目配置", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
-            }
-            item { TypeFilterRow(draft, typeFilter) { typeFilter = it } }
-            val shown = draft.questions.filter { typeFilter == null || it.entryType == typeFilter }
-            val metaByNum = draft.definition.questions.associateBy { it.num }
-            val dimensionSuggestions = dimensionSuggestions(draft)
-            itemsIndexed(shown) { _, q ->
-                val realIndex = draft.questions.indexOf(q)
-                QuestionCard(q, metaByNum[q.num], dimensionSuggestions) { transform -> viewModel.updateQuestion(realIndex, transform) }
+            itemsIndexed(shown, key = { _, question -> question.index }) { _, indexed ->
+                val question = indexed.value
+                QuestionCard(question, metaByNum[question.num], suggestions, question.num == targetQuestion) { transform ->
+                    viewModel.updateQuestion(indexed.index, transform)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PreflightCard(viewModel: MainViewModel) {
+private fun PreflightCard(viewModel: MainViewModel, editableQuestions: Set<Int>, onEditQuestion: (Int) -> Unit) {
     val state by viewModel.workbench.collectAsState()
     val settings by viewModel.settingsStore.settings.collectAsState(initial = com.surveycontroller.android.data.SettingsStore.Settings())
     val draft = state.draft ?: return
@@ -202,13 +234,12 @@ private fun PreflightCard(viewModel: MainViewModel) {
     val externalError = state.error
         ?.takeIf { it.isNotBlank() }
         ?.takeUnless { it.startsWith("启动预检未通过") }
-    if (result.errors.isEmpty() && result.warnings.isEmpty() && externalError.isNullOrBlank()) return
-
+    var expanded by remember { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             val hasErrors = result.errors.isNotEmpty() || externalError != null
             Text(
-                if (hasErrors) "启动预检需处理" else "启动预检建议",
+                "配置检查",
                 style = MaterialTheme.typography.titleMedium,
                 color = if (hasErrors) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             )
@@ -220,26 +251,39 @@ private fun PreflightCard(viewModel: MainViewModel) {
                     modifier = Modifier.padding(top = 6.dp),
                 )
             }
-            result.errors.take(4).forEach { issue ->
-                PreflightLine(issue, isError = true)
+            if (result.errors.isEmpty() && result.warnings.isEmpty() && externalError == null) {
+                Text("检查通过", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (result.errors.size > 4) {
-                Text("还有 ${result.errors.size - 4} 项需处理", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            }
-            result.warnings.take(3).forEach { issue ->
-                PreflightLine(issue, isError = false)
+            val visibleErrors = if (expanded) result.errors else result.errors.take(4)
+            val visibleWarnings = if (expanded) result.warnings else result.warnings.take(3)
+            if (visibleErrors.isNotEmpty()) Text("必须修复", color = MaterialTheme.colorScheme.error)
+            visibleErrors.forEach { PreflightLine(it, true, editableQuestions, onEditQuestion) }
+            if (visibleWarnings.isNotEmpty()) Text("建议检查", modifier = Modifier.padding(top = 6.dp))
+            visibleWarnings.forEach { PreflightLine(it, false, editableQuestions, onEditQuestion) }
+            if (result.errors.size > 4 || result.warnings.size > 3) {
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "收起" else "查看全部检查结果")
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PreflightLine(issue: ConfigPreflight.Issue, isError: Boolean) {
+private fun PreflightLine(
+    issue: ConfigPreflight.Issue,
+    isError: Boolean,
+    editableQuestions: Set<Int>,
+    onEditQuestion: (Int) -> Unit,
+) {
     val color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         Text("• ${issue.title}", style = MaterialTheme.typography.bodyMedium, color = color)
         if (issue.detail.isNotBlank()) {
             Text(issue.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        issue.questionNum?.takeIf { it in editableQuestions }?.let { number ->
+            TextButton(onClick = { onEditQuestion(number) }) { Text("编辑此题") }
         }
     }
 }
@@ -729,9 +773,13 @@ private fun QuestionCard(
     q: QuestionConfigDraft,
     meta: SurveyQuestionMeta?,
     dimensionSuggestions: List<String>,
+    highlighted: Boolean,
     update: ((QuestionConfigDraft) -> QuestionConfigDraft) -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        Modifier.fillMaxWidth(),
+        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+    ) {
         Column(Modifier.padding(16.dp)) {
             Text(
                 "${q.num}. ${q.title}",

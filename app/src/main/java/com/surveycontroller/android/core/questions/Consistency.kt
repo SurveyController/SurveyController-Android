@@ -136,7 +136,11 @@ class AnsweredTracker {
 /**
  * 条件规则引擎：按已答记录裁剪后续题目的可选权重/集合。
  */
-class ConsistencyEngine(rules: List<AnswerRule>, private val tracker: AnsweredTracker) {
+class ConsistencyEngine(
+    rules: List<AnswerRule>,
+    private val tracker: AnsweredTracker,
+    private val onRuleMatched: ((AnswerRule) -> Unit)? = null,
+) {
     private val rules = rules
 
     private fun sanitize(probs: List<Double>): List<Double> =
@@ -178,7 +182,9 @@ class ConsistencyEngine(rules: List<AnswerRule>, private val tracker: AnsweredTr
         } else {
             base.mapIndexed { i, w -> if (i in valid) 0.0 else w }
         }
-        return if (adjusted.sum() <= 0) base else adjusted
+        if (adjusted.sum() <= 0) return base
+        onRuleMatched?.invoke(rule)
+        return adjusted
     }
 
     fun applySingleLike(probs: List<Double>, questionNum: Int): List<Double> {
@@ -198,6 +204,7 @@ class ConsistencyEngine(rules: List<AnswerRule>, private val tracker: AnsweredTr
         val rule = pickLatest(questionNum, null) ?: return emptySet<Int>() to emptySet()
         val valid = rule.targetOptionIndices.filter { it in 0 until optionCount }.toSet()
         if (valid.isEmpty()) return emptySet<Int>() to emptySet()
+        onRuleMatched?.invoke(rule)
         return if (rule.actionMode == "must_select") valid to emptySet() else emptySet<Int>() to valid
     }
 }

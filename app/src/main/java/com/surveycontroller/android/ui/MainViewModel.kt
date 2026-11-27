@@ -15,6 +15,7 @@ import com.surveycontroller.android.core.engine.RunStatus
 import com.surveycontroller.android.core.logging.RunLogArchiver
 import com.surveycontroller.android.core.model.QuestionEntryType
 import com.surveycontroller.android.core.questions.AnswerRule
+import com.surveycontroller.android.core.questions.OfflineRehearsal
 import com.surveycontroller.android.core.reverse_fill.ReverseFillBuilder
 import com.surveycontroller.android.core.reverse_fill.ReverseFillSpec
 import com.surveycontroller.android.core.reverse_fill.XlsxReader
@@ -304,6 +305,25 @@ class MainViewModel @Inject constructor(
             QuestionEntryType.MULTIPLE ->
                 q.copy(multiProbabilities = MutableList(optCount) { if (mode == BulkMode.RANDOM) kotlin.random.Random.nextInt(0, 101).toDouble() else 50.0 })
             else -> q
+        }
+    }
+
+    internal suspend fun rehearse(seed: Long): OfflineRehearsal.Report {
+        val snapshot = _workbench.value
+        val draft = snapshot.draft ?: throw OfflineRehearsal.Issue("请先解析问卷并配置答案")
+        if (engine.isRunning) throw OfflineRehearsal.Issue("请在当前任务结束后试跑")
+        val spec = if (snapshot.reverseFillEnabled) {
+            snapshot.reverseFillSpec ?: throw OfflineRehearsal.Issue("请先导入可用的反填数据")
+        } else {
+            null
+        }
+        return withContext(Dispatchers.Default) {
+            val ids = ConfigCodec.resolvedQuestionIds(draft)
+            val numbers = draft.definition.questions.filter { it.num > 0 && !it.isDescription }.map { it.num }
+            if (ids.size != ids.toSet().size || numbers.size != numbers.toSet().size) {
+                throw OfflineRehearsal.Issue("题号或题目 ID 重复，请重新解析问卷")
+            }
+            OfflineRehearsal.generate(ConfigCompiler.compile(draft), seed, spec)
         }
     }
 

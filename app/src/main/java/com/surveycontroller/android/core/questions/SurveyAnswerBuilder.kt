@@ -6,9 +6,11 @@ import com.surveycontroller.android.core.model.AnswerPlan
 import com.surveycontroller.android.core.model.SurveyQuestionMeta
 import kotlin.math.floor
 import kotlin.math.min
-import kotlin.random.Random
 
 internal const val OPTION_FILL_AI_TOKEN = "__AI_FILL__"
+
+internal fun runtimeOptionTexts(question: SurveyQuestionMeta): List<String> =
+    question.optionTexts.map { it.trim() }.filter { it.isNotEmpty() }
 
 /**
  * 平台无关的答案生成。复刻各 provider 的 answering_builders 共有选择逻辑。
@@ -34,13 +36,15 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
         val blockedIndices: Set<Int>,
     )
 
-    suspend fun buildPlan(): AnswerPlan {
+    suspend fun buildPlan(): AnswerPlan = buildPlan { buildAction(it) }
+
+    internal suspend fun buildPlan(build: suspend (SurveyQuestionMeta) -> AnswerAction?): AnswerPlan {
         val questions = ctx.config.orderedQuestions()
         // 免费 AI 批量预填：把所有 AI 填空题一次性提交（批量优化），结果存入 state 供逐题读取
         prefillAiText(questions)
         // 跳题/显隐剪枝 + 逐题构建 + 记录已答（供条件规则引用）
         val plan = HttpLogicPlanner.build(questions, respectJumpLogic = true) { q ->
-            val action = buildAction(q)
+            val action = build(q)
             if (action != null) ctx.answered.record(action)
             action
         }
@@ -127,7 +131,7 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
     }
 
     private fun optionTexts(q: SurveyQuestionMeta): List<String> =
-        q.optionTexts.map { it.trim() }.filter { it.isNotEmpty() }
+        runtimeOptionTexts(q)
 
     private fun validForced(index: Int?, optionCount: Int): Int? =
         index?.takeIf { it in 0 until optionCount }
@@ -156,7 +160,7 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
                 probs = Probabilities.enforceReferenceRankOrder(probs, reference)
             }
             selectedIndex = if (hasDim) ctx.tendency.getTendencyIndex(optionCount, probs, dimension, ctx.psychoPlan, configQuestionNum)
-            else Probabilities.weightedIndex(probs)
+            else Probabilities.weightedIndex(probs, ctx.random)
         } else {
             selectedIndex = forced
         }
@@ -199,7 +203,7 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
                 if (strictRatio) probs = Probabilities.enforceReferenceRankOrder(probs, reference)
             }
             selectedIndex = if (hasDim) ctx.tendency.getTendencyIndex(optionCount, probs, dimension, ctx.psychoPlan, configQuestionNum)
-            else Probabilities.weightedIndex(probs)
+            else Probabilities.weightedIndex(probs, ctx.random)
         } else {
             selectedIndex = forced
         }
@@ -285,8 +289,8 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
             val maxTotal = minOf(bounds.maxAllowed, requiredCount + pool.size)
             val extraMin = maxOf(0, minTotal - requiredCount)
             val extraMax = maxOf(0, maxTotal - requiredCount)
-            val extra = if (extraMax >= extraMin && extraMax > 0) Random.nextInt(extraMin, extraMax + 1) else extraMin.coerceAtMost(extraMax)
-            pool.shuffle()
+            val extra = if (extraMax >= extraMin && extraMax > 0) ctx.random.nextInt(extraMin, extraMax + 1) else extraMin.coerceAtMost(extraMax)
+            pool.shuffle(ctx.random)
             return finalizeMultiple(
                 q,
                 configIndex,
@@ -310,14 +314,14 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
             val minTotal = maxOf(bounds.minRequired, requiredCount)
             val maxTotal = minOf(bounds.maxAllowed, requiredCount + positiveOptional.size)
             val expectedOptional = positiveOptional.sumOf { probs[it] } / 100.0
-            val totalTarget = (requiredCount + Probabilities.stochasticRound(expectedOptional))
+            val totalTarget = (requiredCount + Probabilities.stochasticRound(expectedOptional, ctx.random))
                 .coerceIn(minTotal, maxOf(minTotal, maxTotal))
             val optionalTarget = maxOf(0, totalTarget - requiredCount)
-            val sampled = Probabilities.weightedSampleWithoutReplacement(positiveOptional, positiveOptional.map { probs[it] }, optionalTarget)
+            val sampled = Probabilities.weightedSampleWithoutReplacement(positiveOptional, positiveOptional.map { probs[it] }, optionalTarget, ctx.random)
             return finalizeMultiple(
                 q,
                 configIndex,
-                normalizeMultipleSelection(sampled, bounds, positiveOptional.shuffled()),
+                normalizeMultipleSelection(sampled, bounds, positiveOptional.shuffled(ctx.random)),
             )
         }
 
@@ -334,19 +338,19 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
         var attempts = 0
         if (positive.isNotEmpty()) {
             while ((mask.isEmpty() || mask.sum() == 0) && attempts < 32) {
-                mask = probs.map { if (Random.nextDouble() < it / 100.0) 1 else 0 }
+                mask = probs.map { if (ctx.random.nextDouble() < it / 100.0) 1 else 0 }
                 attempts++
             }
             if (mask.sum() == 0) {
                 val m = MutableList(optionCount) { 0 }
-                m[positive.random()] = 1
+                m[positive.random(ctx.random)] = 1
                 mask = m
             }
         } else {
             mask = MutableList(optionCount) { 0 }
         }
         var selected = (0 until optionCount).filter { mask[it] == 1 && probs[it] > 0 }.toMutableList()
-        return finalizeMultiple(q, configIndex, normalizeMultipleSelection(selected, bounds, positive.shuffled()))
+        return finalizeMultiple(q, configIndex, normalizeMultipleSelection(selected, bounds, positive.shuffled(ctx.random)))
     }
 
     private suspend fun finalizeMultiple(q: SurveyQuestionMeta, configIndex: Int, selectedIndices: List<Int>): AnswerAction? {
@@ -438,6 +442,8 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
                     blankModes = ctx.config.multiTextBlankModes.getOrNull(configIndex) ?: emptyList(),
                     blankIntRanges = ctx.config.multiTextBlankIntRanges.getOrNull(configIndex) ?: emptyList(),
                     gender = ctx.persona.gender(),
+                    random = ctx.random,
+                    referenceYear = ctx.syntheticDataYear,
                 )
                 if (entryType == "multi_text" && blankAiFlags.any { it }) {
                     val aiValues = resolveAiText(q, blankCount)
@@ -497,10 +503,10 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
         val step = finiteDouble(q.sliderStep)?.takeIf { it > 0.0 }
         if (step != null) {
             val steps = floor((bounds.max - bounds.min) / step).toInt().coerceAtLeast(0)
-            val selectedStep = if (steps > 0) Random.nextInt(0, steps + 1) else 0
+            val selectedStep = if (steps > 0) ctx.random.nextInt(0, steps + 1) else 0
             return (bounds.min + selectedStep * step).coerceIn(bounds.min, bounds.max)
         }
-        return Random.nextDouble(bounds.min, bounds.max)
+        return ctx.random.nextDouble(bounds.min, bounds.max)
     }
 
     private fun clampSliderValue(value: Double, q: SurveyQuestionMeta): Double {
@@ -541,7 +547,7 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
 
     private fun buildOrder(q: SurveyQuestionMeta): AnswerAction {
         val optionCount = maxOf(1, optionTexts(q).size.takeIf { it > 0 } ?: q.options)
-        val order = (0 until optionCount).toMutableList().also { it.shuffle() }
+        val order = (0 until optionCount).toMutableList().also { it.shuffle(ctx.random) }
         return AnswerAction(questionNum = q.num, kind = "order", selectedIndices = order, recordType = "order")
     }
 
@@ -562,14 +568,14 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
         configQuestionNum: Int,
     ): String? {
         val candidates = ctx.config.optionFillCandidates[configQuestionNum]?.get(optionIndex)
-        val raw = if (candidates != null) candidates.randomOrNull() else entries?.getOrNull(optionIndex)
+        val raw = if (candidates != null) candidates.randomOrNull(ctx.random) else entries?.getOrNull(optionIndex)
         val text = raw?.trim().orEmpty()
         if (text.isEmpty()) return defaultMissingOptionFill(question, optionIndex, null)
         if (text == OPTION_FILL_AI_TOKEN) return resolveAiOptionFill(question, configQuestionNum, optionIndex)
         return defaultMissingOptionFill(
             question,
             optionIndex,
-            RandomText.resolveDynamicToken(text, ctx.persona.gender()),
+            RandomText.resolveDynamicToken(text, ctx.persona.gender(), ctx.random, ctx.syntheticDataYear),
         )
     }
 
@@ -625,7 +631,7 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
         val weights = config["weights"].asDoubleList()
             .takeIf { it.size == options.size && it.any { value -> value > 0.0 } }
             ?: List(options.size) { 1.0 }
-        val selected = Probabilities.weightedIndex(weights).coerceIn(0, options.lastIndex)
+        val selected = Probabilities.weightedIndex(weights, ctx.random).coerceIn(0, options.lastIndex)
         val values = config["select_values"].asStringList()
         val value = values.getOrNull(selected)?.trim()?.takeIf { it.isNotEmpty() }
             ?: options.getOrNull(selected).orEmpty()
@@ -667,7 +673,7 @@ class SurveyAnswerBuilder(private val ctx: AnswerContext) {
     }
 
     private fun shuffledAvailableIndices(bounds: MultipleSelectionBounds): List<Int> =
-        (0 until bounds.optionCount).filter { it !in bounds.blockedIndices }.shuffled()
+        (0 until bounds.optionCount).filter { it !in bounds.blockedIndices }.shuffled(ctx.random)
 
     private fun Any?.asIntOrNull(): Int? = when (this) {
         is Number -> toInt()
