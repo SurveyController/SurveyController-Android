@@ -52,6 +52,9 @@ import com.surveycontroller.android.ui.components.studioFeature
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.surveycontroller.android.ui.components.studioActionColors
+import com.surveycontroller.android.ui.theme.ChromeDarkColors
+import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
 
 @Composable
 fun HomeScreen(viewModel: MainViewModel, onConfigure: () -> Unit, onScan: () -> Unit) {
@@ -105,6 +108,7 @@ fun HomeScreen(viewModel: MainViewModel, onConfigure: () -> Unit, onScan: () -> 
                     )
                 }
                 Button(
+                    colors = studioActionColors(),
                     onClick = viewModel::parse,
                     enabled = !state.parsing && input.isNotEmpty(),
                     shape = MaterialTheme.shapes.medium,
@@ -164,7 +168,11 @@ fun HomeScreen(viewModel: MainViewModel, onConfigure: () -> Unit, onScan: () -> 
                     }
                 }
             }
-            Text("仅供已获授权的问卷测试使用。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "仅供已获授权的问卷测试使用。",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (LocalChromeDarkTheme.current) ChromeDarkColors.muted else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

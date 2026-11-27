@@ -37,6 +37,9 @@ import com.surveycontroller.android.ui.components.StudioCard
 import com.surveycontroller.android.ui.components.StudioEmblem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Checklist
+import com.surveycontroller.android.ui.components.studioActionColors
+import com.surveycontroller.android.ui.theme.ChromeDarkColors
+import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
 
 @Composable
 internal fun OfflineRehearsalDialog(
@@ -58,7 +61,7 @@ internal fun OfflineRehearsalDialog(
         Surface(
             modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.90f),
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.background,
+            color = if (LocalChromeDarkTheme.current) ChromeDarkColors.panel else MaterialTheme.colorScheme.background,
         ) {
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
@@ -90,6 +93,7 @@ internal fun OfflineRehearsalDialog(
                 }
                 item {
                     Button(
+                        colors = studioActionColors(),
                         enabled = seed != null && !generating,
                         onClick = {
                             if (seed != null) {

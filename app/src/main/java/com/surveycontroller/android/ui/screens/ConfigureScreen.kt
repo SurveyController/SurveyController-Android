@@ -87,6 +87,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
 import kotlin.math.roundToInt
+import com.surveycontroller.android.ui.components.studioActionColors
+import com.surveycontroller.android.ui.theme.ChromeDarkColors
+import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
+import com.surveycontroller.android.ui.components.studioSuccessColor
 
 private enum class ConfigSection(val label: String) { QUESTIONS("题目"), PARAMETERS("运行参数"), CHECK("检查") }
 
@@ -129,7 +133,10 @@ fun ConfigureScreen(viewModel: MainViewModel, onBack: () -> Unit, onRun: () -> U
         },
         bottomBar = {
             if (draft != null) {
-                Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 2.dp) {
+                Surface(
+                    color = if (LocalChromeDarkTheme.current) ChromeDarkColors.toolbar else MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 2.dp,
+                ) {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Row(
                             modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth().navigationBarsPadding().padding(14.dp),
@@ -142,6 +149,7 @@ fun ConfigureScreen(viewModel: MainViewModel, onBack: () -> Unit, onRun: () -> U
                                 shape = MaterialTheme.shapes.medium,
                             ) { Text("离线试跑") }
                             Button(
+                                colors = studioActionColors(),
                                 onClick = if (section == ConfigSection.CHECK) onRun else { { section = ConfigSection.CHECK } },
                                 modifier = Modifier.weight(1.3f).height(48.dp),
                                 shape = MaterialTheme.shapes.medium,
@@ -303,7 +311,7 @@ private fun PreflightCard(viewModel: MainViewModel, editableQuestions: Set<Int>,
                 )
             }
             if (result.errors.isEmpty() && result.warnings.isEmpty() && externalError == null) {
-                Text("检查通过", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("检查通过", color = studioSuccessColor())
             }
             val visibleErrors = if (expanded) result.errors else result.errors.take(4)
             val visibleWarnings = if (expanded) result.warnings else result.warnings.take(3)

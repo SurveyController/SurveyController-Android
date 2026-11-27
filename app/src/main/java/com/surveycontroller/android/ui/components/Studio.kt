@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
@@ -26,12 +28,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.surveycontroller.android.ui.theme.ChromeDarkColors
+import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
 
 internal val distributionColors = listOf(
     Color(0xFF4D68C9), Color(0xFF8795C2), Color(0xFFB08C80), Color(0xFF748392),
@@ -39,20 +44,42 @@ internal val distributionColors = listOf(
 )
 
 @Composable
+internal fun studioActionColors(): ButtonColors = if (LocalChromeDarkTheme.current) {
+    ButtonDefaults.buttonColors(containerColor = ChromeDarkColors.action, contentColor = Color.White)
+} else {
+    ButtonDefaults.buttonColors()
+}
+
+@Composable
+internal fun studioSuccessColor(): Color =
+    if (LocalChromeDarkTheme.current) ChromeDarkColors.success else Color(0xFF237246)
+
+@Composable
 internal fun Modifier.studioFeature(): Modifier {
     val shape = MaterialTheme.shapes.extraLarge
-    return background(MaterialTheme.colorScheme.surfaceContainerLow, shape)
+    val container = if (LocalChromeDarkTheme.current) ChromeDarkColors.panel else MaterialTheme.colorScheme.surfaceContainerLow
+    return background(container, shape)
         .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
 }
 
 @Composable
 internal fun StudioCard(
     modifier: Modifier = Modifier,
-    colors: CardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    colors: CardColors = CardDefaults.cardColors(
+        containerColor = if (LocalChromeDarkTheme.current) ChromeDarkColors.panel else MaterialTheme.colorScheme.surfaceContainerLow,
+    ),
     border: BorderStroke? = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(modifier = modifier, shape = MaterialTheme.shapes.large, colors = colors, border = border, content = content)
+    Card(modifier = modifier, shape = MaterialTheme.shapes.large, colors = colors, border = border) {
+        if (LocalChromeDarkTheme.current) {
+            val scheme = MaterialTheme.colorScheme
+            val panelScheme = remember(scheme) { scheme.copy(error = ChromeDarkColors.errorOnPanel) }
+            MaterialTheme(colorScheme = panelScheme) { content() }
+        } else {
+            content()
+        }
+    }
 }
 
 @Composable
@@ -90,12 +117,14 @@ internal fun StudioTopBar(
     subtitle: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val chromeDark = LocalChromeDarkTheme.current
     TopAppBar(
         title = {
             Column {
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    color = if (chromeDark) ChromeDarkColors.muted else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },
         actions = actions,
@@ -104,6 +133,8 @@ internal fun StudioTopBar(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = if (chromeDark) ChromeDarkColors.toolbar else MaterialTheme.colorScheme.background,
+        ),
     )
 }

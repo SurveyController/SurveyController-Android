@@ -58,6 +58,7 @@ import com.surveycontroller.android.ui.components.StudioEmblem
 import com.surveycontroller.android.ui.components.StudioHeading
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
+import com.surveycontroller.android.ui.components.studioActionColors
 
 @Composable
 fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
@@ -185,7 +186,7 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
                 Text("尚未激活随机 IP 账号。可使用额度卡密直接激活；服务端已停止发放免费试用，旧版“领取试用”可能失败。", style = MaterialTheme.typography.bodySmall)
             }
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!sess.authenticated) Button(onClick = viewModel::activateTrial, enabled = !account.busy) { Text("激活 / 领取") }
+                if (!sess.authenticated) Button(colors = studioActionColors(), onClick = viewModel::activateTrial, enabled = !account.busy) { Text("激活 / 领取") }
                 else OutlinedButton(onClick = viewModel::refreshQuota, enabled = !account.busy) { Text("同步额度") }
                 OutlinedButton(onClick = viewModel::checkBackendStatus, enabled = !account.busy) { Text("服务状态") }
                 if (account.busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -199,6 +200,7 @@ fun SettingsScreen(viewModel: MainViewModel, onOpenIpUsage: () -> Unit = {}) {
                 singleLine = true,
             )
             Button(
+                colors = studioActionColors(),
                 onClick = { viewModel.redeemCard(cardCode); cardCode = "" },
                 enabled = !account.busy && cardCode.isNotBlank(),
                 modifier = Modifier.padding(top = 4.dp),

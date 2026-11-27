@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
@@ -39,6 +41,9 @@ import com.surveycontroller.android.ui.MainViewModel
 import com.surveycontroller.android.ui.components.StudioCard
 import com.surveycontroller.android.ui.components.studioFeature
 import com.surveycontroller.android.ui.components.StudioTopBar
+import com.surveycontroller.android.ui.components.studioSuccessColor
+import com.surveycontroller.android.ui.theme.ChromeDarkColors
+import com.surveycontroller.android.ui.theme.LocalChromeDarkTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,8 +89,12 @@ private fun OverviewCard(p: com.surveycontroller.android.core.engine.RunProgress
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Stat("成功", p.success.toString(), Modifier.weight(1f))
-            Stat("失败", p.fail.toString(), Modifier.weight(1f))
+            Stat("成功", p.success.toString(), Modifier.weight(1f), valueColor = studioSuccessColor())
+            val errorText = if (LocalChromeDarkTheme.current) ChromeDarkColors.errorOnPanel else MaterialTheme.colorScheme.error
+            Stat(
+                "失败", p.fail.toString(), Modifier.weight(1f),
+                valueColor = if (p.fail > 0) errorText else MaterialTheme.colorScheme.onSurface,
+            )
             Stat("目标", p.target.toString(), Modifier.weight(1f))
         }
     }
@@ -95,7 +104,7 @@ private fun OverviewCard(p: com.surveycontroller.android.core.engine.RunProgress
 private fun SuccessRing(success: Int, target: Int) {
     val fraction = if (target > 0) (success.toFloat() / target).coerceIn(0f, 1f) else 0f
     val track = MaterialTheme.colorScheme.surfaceVariant
-    val progressColor = MaterialTheme.colorScheme.primary
+    val progressColor = if (fraction >= 1f) studioSuccessColor() else MaterialTheme.colorScheme.primary
     Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val inset = 5.dp.toPx()
@@ -106,7 +115,7 @@ private fun SuccessRing(success: Int, target: Int) {
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("${(fraction * 100).toInt()}%", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text("完成", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text("完成", style = MaterialTheme.typography.labelSmall, color = progressColor)
         }
     }
 }
@@ -118,7 +127,14 @@ private fun ControlRow(status: RunStatus, viewModel: MainViewModel) {
         val paused = status == RunStatus.PAUSED
         if (running) OutlinedButton(onClick = viewModel::pauseRun, modifier = Modifier.weight(1f)) { Text("暂停") }
         if (paused) OutlinedButton(onClick = viewModel::resumeRun, modifier = Modifier.weight(1f)) { Text("继续") }
-        if (running || paused) Button(onClick = viewModel::stopRun, modifier = Modifier.weight(1f)) { Text("停止") }
+        if (running || paused) Button(
+            onClick = viewModel::stopRun,
+            modifier = Modifier.weight(1f),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
+        ) { Text("停止") }
     }
 }
 
@@ -180,11 +196,11 @@ private fun LogCard(logs: List<String>) {
 }
 
 @Composable
-private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
+private fun Stat(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = MaterialTheme.colorScheme.onSurface) {
     StudioCard(modifier) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily.Monospace)
+            Text(value, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily.Monospace, color = valueColor)
         }
     }
 }

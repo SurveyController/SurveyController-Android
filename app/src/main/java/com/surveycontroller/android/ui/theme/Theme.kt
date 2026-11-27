@@ -10,6 +10,8 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -46,36 +48,58 @@ private val LightColors = lightColorScheme(
     onErrorContainer = Color(0xFF7F2638),
 )
 
+internal object ChromeDarkColors {
+    val canvas = Color(0xFF202124)
+    val toolbar = Color(0xFF292A2D)
+    val panel = Color(0xFF3C4043)
+    val outline = Color(0xFF5F6368)
+    val text = Color(0xFFE8EAED)
+    val muted = Color(0xFF9AA0A6)
+    val mutedOnPanel = Color(0xFFBDC1C6)
+    val accent = Color(0xFF8AB4F8)
+    val selection = Color(0xFF303B4D)
+    val action = Color(0xFF1A73E8)
+    val error = Color(0xFFF28B82)
+    val errorOnPanel = Color(0xFFF6A39B)
+    val success = Color(0xFF81C995)
+}
+
+internal val LocalChromeDarkTheme = staticCompositionLocalOf { false }
+
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFA7BBFF),
-    onPrimary = Color(0xFF131D3A),
-    primaryContainer = Color(0xFF303952),
-    onPrimaryContainer = Color(0xFFC5D1FF),
-    secondary = Color(0xFFADB7CA),
-    onSecondary = Color(0xFF1B2434),
-    secondaryContainer = Color(0xFF303747),
-    onSecondaryContainer = Color(0xFFDAE1F0),
-    tertiary = Color(0xFFCBC1DA),
-    tertiaryContainer = Color(0xFF3A3346),
-    onTertiaryContainer = Color(0xFFE9DFF4),
-    background = Color(0xFF15171C),
-    onBackground = Color(0xFFEDF0F6),
-    surface = Color(0xFF15171C),
-    onSurface = Color(0xFFEDF0F6),
-    surfaceTint = Color(0xFFA7BBFF),
-    surfaceVariant = Color(0xFF2A2D35),
-    onSurfaceVariant = Color(0xFFADB7CA),
-    surfaceContainerLowest = Color(0xFF181A20),
-    surfaceContainerLow = Color(0xFF202329),
-    surfaceContainer = Color(0xFF232630),
-    surfaceContainerHigh = Color(0xFF2A2D35),
-    surfaceContainerHighest = Color(0xFF303440),
-    outline = Color(0xFF8B95A9),
-    outlineVariant = Color(0xFF383D49),
-    error = Color(0xFFFFA5B3),
-    onError = Color(0xFF441722),
-    errorContainer = Color(0xFF46262E),
-    onErrorContainer = Color(0xFFFFCBD4),
+    primary = ChromeDarkColors.accent,
+    onPrimary = ChromeDarkColors.canvas,
+    primaryContainer = ChromeDarkColors.selection,
+    onPrimaryContainer = ChromeDarkColors.accent,
+    secondary = ChromeDarkColors.muted,
+    onSecondary = ChromeDarkColors.canvas,
+    secondaryContainer = ChromeDarkColors.selection,
+    onSecondaryContainer = ChromeDarkColors.accent,
+    tertiary = ChromeDarkColors.mutedOnPanel,
+    onTertiary = ChromeDarkColors.canvas,
+    tertiaryContainer = ChromeDarkColors.toolbar,
+    onTertiaryContainer = ChromeDarkColors.text,
+    background = ChromeDarkColors.canvas,
+    onBackground = ChromeDarkColors.text,
+    surface = ChromeDarkColors.canvas,
+    onSurface = ChromeDarkColors.text,
+    surfaceTint = ChromeDarkColors.panel,
+    surfaceVariant = ChromeDarkColors.toolbar,
+    onSurfaceVariant = ChromeDarkColors.mutedOnPanel,
+    surfaceContainerLowest = ChromeDarkColors.canvas,
+    surfaceContainerLow = ChromeDarkColors.toolbar,
+    surfaceContainer = ChromeDarkColors.toolbar,
+    surfaceContainerHigh = ChromeDarkColors.panel,
+    surfaceContainerHighest = ChromeDarkColors.panel,
+    outline = ChromeDarkColors.outline,
+    outlineVariant = ChromeDarkColors.outline,
+    inverseSurface = ChromeDarkColors.text,
+    inverseOnSurface = ChromeDarkColors.canvas,
+    inversePrimary = Color(0xFF185ABC),
+    error = ChromeDarkColors.error,
+    onError = Color(0xFF401A18),
+    errorContainer = Color(0xFF502927),
+    onErrorContainer = Color(0xFFFAD2CF),
 )
 
 private val AppShapes = Shapes(
@@ -93,16 +117,19 @@ fun SurveyControllerTheme(
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
+    val useDynamicColor = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+        useDynamicColor ->
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         darkTheme -> DarkColors
         else -> LightColors
     }
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = AppTypography,
-        shapes = AppShapes,
-        content = content,
-    )
+    CompositionLocalProvider(LocalChromeDarkTheme provides (darkTheme && !useDynamicColor)) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = AppTypography,
+            shapes = AppShapes,
+            content = content,
+        )
+    }
 }

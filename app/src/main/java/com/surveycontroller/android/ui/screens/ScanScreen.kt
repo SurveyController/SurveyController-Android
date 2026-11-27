@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import com.surveycontroller.android.ui.components.StudioEmblem
 import com.surveycontroller.android.ui.components.StudioTopBar
+import com.surveycontroller.android.ui.components.studioActionColors
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -80,7 +81,7 @@ fun ScanScreen(onResult: (String) -> Unit, onBack: () -> Unit) {
                     StudioEmblem(Icons.Filled.QrCodeScanner)
                     Text("允许相机访问", style = MaterialTheme.typography.headlineSmall)
                     Text("打开相机后即可扫描问卷二维码。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = { permission.launchPermissionRequest() }) { Text("授予相机权限") }
+                    Button(colors = studioActionColors(), onClick = { permission.launchPermissionRequest() }) { Text("授予相机权限") }
                 }
             }
         }

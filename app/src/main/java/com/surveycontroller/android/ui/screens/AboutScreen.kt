@@ -42,6 +42,7 @@ import com.surveycontroller.android.ui.MainViewModel
 import com.surveycontroller.android.ui.components.ZoomableImageDialog
 import com.surveycontroller.android.ui.components.StudioCard
 import com.surveycontroller.android.ui.components.studioFeature
+import com.surveycontroller.android.ui.components.studioActionColors
 
 private data class Contributor(val name: String, val url: String)
 
@@ -117,7 +118,7 @@ fun AboutScreen(viewModel: MainViewModel) {
                                 Text("发现新版本 ${u.latestVersion}（当前 ${u.currentVersion}）", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                                 if (u.releaseNotes.isNotBlank()) Text(u.releaseNotes.take(300), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
                                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    u.apkDownloadUrl?.let { apk -> Button(onClick = { open(apk) }) { Text("下载 APK") } }
+                                    u.apkDownloadUrl?.let { apk -> Button(colors = studioActionColors(), onClick = { open(apk) }) { Text("下载 APK") } }
                                     OutlinedButton(onClick = { open(u.releaseUrl) }) { Text("前往发行页") }
                                 }
                             }
