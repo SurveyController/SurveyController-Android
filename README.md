@@ -12,7 +12,7 @@
     <a href="static/screenshot/workspace-light.png"><img src="static/screenshot/workspace-light.png" alt="Android 浅色工作台，显示问卷链接输入、扫码与配置导入入口" width="228"></a>
     <a href="static/screenshot/workspace-dark.png"><img src="static/screenshot/workspace-dark.png" alt="Android 深色工作台，显示问卷链接输入、扫码与配置导入入口" width="228"></a>
   </p>
-  <p><sub>开发版预览 · Android 浅色与深色工作台</sub></p>
+  <p><sub>v2.2.0 · Android 浅色与深色工作台</sub></p>
 </div>
 
 > [!IMPORTANT]
@@ -31,7 +31,7 @@
 
 Android 端使用 Kotlin 和 Jetpack Compose，支持配置导入导出、任务暂停与恢复和运行日志。任务参数可调整并发、提交间隔、代理地区和设备类型，量表题支持信度计划。配置文件可用于在桌面端和移动端之间迁移设置，具体可用项受问卷平台和题型影响。
 
-开发版加入了分区配置、题目搜索和离线试跑。使用同一份配置和随机种子，可以在本机复现最多 20 份样例。从逐题答案、选项分布或配置检查结果中，可以直接跳回对应题目。试跑只生成本地预览，AI 填空显示占位文本。
+工作台支持分区配置、题目搜索和离线试跑。使用同一份配置和随机种子，可以在本机复现最多 20 份样例。从逐题答案、选项分布或配置检查结果中，可以直接跳回对应题目。试跑只生成本地预览，AI 填空显示占位文本。
 
 ## 开始使用
 
